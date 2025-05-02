@@ -7,7 +7,8 @@ import gzip
 import pickle
 import sys
 
-from models.PGPR.utils import get_entities_without_user
+# from models.PGPR.utils import get_entities_without_user
+from utils import get_entities_without_user
 ML1M = 'ml1m'
 LASTFM = 'lastfm'
 ML100K = 'ml100k'
@@ -18,7 +19,7 @@ ML100K = 'ml100k'
 KG_COMPLETATION_DATASET_DIR = {
     ML1M: './datasets/ml1m/joint-kg',
     LASTFM: './datasets/lastfm/kg-completion',
-    ML100K: './datasets/ml100k'
+    # ML100K: './datasets/lastfm/kg-completion'
 }
 
 DATASET_DIR = {
@@ -33,15 +34,15 @@ LABELS_DIR = {
         "train": "models/PGPR/tmp/ml1m/train_label.pkl",
         "test": "models/PGPR/tmp/ml1m/test_label.pkl",
     },
-    ML100K: {
-        "kg": "models/PGPR/tmp/ml100k/kg.pkl",
-        "train": "models/PGPR/tmp/ml100k/train_label.pkl",
-        "test": "models/PGPR/tmp/ml100k/test_label.pkl",
-    },
     LASTFM: {
         "kg": "models/PGPR/tmp/lastfm/kg.pkl",
         "train": "models/PGPR/tmp/lastfm/train_label.pkl",
         "test": "models/PGPR/tmp/lastfm/test_label.pkl",
+    },
+    ML100K: {
+        "kg": "models/PGPR/tmp/ml100k/kg.pkl",
+        "train": "models/PGPR/tmp/ml100k/train_label.pkl",
+        "test": "models/PGPR/tmp/ml100k/test_label.pkl",
     }
 }
 
@@ -51,8 +52,8 @@ PGPR_MODEL_DIR = "models/PGPR"
 # Selected relationships.
 SELECTED_RELATIONS = {
     ML1M: [0, 1, 2, 3, 8, 10, 14, 15, 16, 18],
-    LASTFM: [0, 1, 2, 3, 4, 5, 6, 7, 8],
-    ML100K: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    ML100K: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    LASTFM: [0, 1, 2, 3, 4, 5, 6, 7, 8]
 }
 
 PATH_TYPES = {
@@ -64,7 +65,6 @@ PATH_TYPES = {
 TOTAL_PATH_TYPES = {
     ML1M: len(SELECTED_RELATIONS[ML1M]),
     LASTFM: len(SELECTED_RELATIONS[LASTFM]),
-    ML100K: len(SELECTED_RELATIONS[ML100K]),
 }
 
 # Model result directories.
@@ -104,19 +104,11 @@ def get_user2occupation(dataset_name):
     file = open(DATASET_DIR[dataset_name] + "/mappings/uid2occupation.txt", 'r')
     csv_reader = csv.reader(file, delimiter='\n')
     uid_occ = {}
-    if dataset_name == ML1M:
-        occ2name = {0: "other", 1:  "academic/educator",  2:  "artist",  3:  "clerical/admin",  4:  "college/grad student",  5:  "customer service",  6:  "doctor/health care",  7:  "executive/managerial",  8:  "farmer",  9:  "homemaker", 10:  "K-12 student", 11:  "lawyer", 12:  "programmer", 13:  "retired", 14:  "sales/marketing", 15:  "scientist", 16:  "self-employed", 17:  "technician/engineer", 18:  "tradesman/craftsman", 19:  "unemployed", 20:  "writer"}
-    elif dataset_name == ML100K:
-        occ2name = { 0: "administrator", 1: "artist", 2: "doctor", 3: "educator", 4: "engineer", 5: "entertainment", 6: "executive", 7: "healthcare", 8: "homemaker", 9: "lawyer", 10: "librarian", 11: "marketing", 12: "none", 13: "other", 14: "programmer", 15: "retired", 16: "salesman", 17: "scientist", 18: "student", 19: "technician", 20: "writer" }
-        name2occ = { v:k for k,v in occ2name.items() }
-
+    occ2name = {0: "other", 1:  "academic/educator",  2:  "artist",  3:  "clerical/admin",  4:  "college/grad student",  5:  "customer service",  6:  "doctor/health care",  7:  "executive/managerial",  8:  "farmer",  9:  "homemaker", 10:  "K-12 student", 11:  "lawyer", 12:  "programmer", 13:  "retired", 14:  "sales/marketing", 15:  "scientist", 16:  "self-employed", 17:  "technician/engineer", 18:  "tradesman/craftsman", 19:  "unemployed", 20:  "writer"}
     uid_mapping = get_uid_to_kg_uid_mapping(dataset_name)  # 1->0
     for row in csv_reader:
         row = row[0].strip().split('\t')
-        if dataset_name == ML1M:
-            uid_occ[uid_mapping[int(row[0])]] = int(row[1])
-        elif dataset_name == ML100K:
-            uid_occ[uid_mapping[int(row[0])]] = name2occ[row[1]]
+        uid_occ[uid_mapping[int(row[0])]] = int(row[1])
     return uid_occ, occ2name
 
 def get_uid_to_kg_uid_mapping(dataset_name):

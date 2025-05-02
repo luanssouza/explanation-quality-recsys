@@ -38,6 +38,7 @@ def train(args):
 
             # Get training batch.
             batch_idxs = dataloader.get_batch()
+            # print(batch_idxs)
             batch_idxs = torch.from_numpy(batch_idxs).to(args.device)
 
             # Train model.
@@ -74,7 +75,7 @@ def extract_embeddings(args):
             CATEGORY: state_dict['category.weight'].cpu().data.numpy()[:-1],
             PRODUCER: state_dict['producer.weight'].cpu().data.numpy()[:-1],
             EDITOR: state_dict['editor.weight'].cpu().data.numpy()[:-1],
-            WRITTER: state_dict['writter.weight'].cpu().data.numpy()[:-1],
+            WRITER: state_dict['writer.weight'].cpu().data.numpy()[:-1],
             CINEMATOGRAPHER: state_dict['cinematographer.weight'].cpu().data.numpy()[:-1],
             COMPOSER: state_dict['composer.weight'].cpu().data.numpy()[:-1],
             WATCHED: (
@@ -116,6 +117,50 @@ def extract_embeddings(args):
             COMPOSED_BY: (
                 state_dict['composed_by'].cpu().data.numpy()[0],
                 state_dict['composed_by_bias.weight'].cpu().data.numpy()
+            ),
+    }
+    elif args.dataset == "ml100k":
+        embeds = {
+            USER: state_dict['user.weight'].cpu().data.numpy()[:-1],  # Must remove last dummy 'user' with 0 embed.
+            MOVIE: state_dict['movie.weight'].cpu().data.numpy()[:-1],
+            PRODUCER: state_dict['producer.weight'].cpu().data.numpy()[:-1],
+            DISTRIBUTOR: state_dict['distributor.weight'].cpu().data.numpy()[:-1],
+            WRITER: state_dict['writer.weight'].cpu().data.numpy()[:-1],
+            CINEMATOGRAPHER: state_dict['cinematographer.weight'].cpu().data.numpy()[:-1],
+            CATEGORY: state_dict['category.weight'].cpu().data.numpy()[:-1],
+            ACTOR: state_dict['actor.weight'].cpu().data.numpy()[:-1],
+            DIRECTOR: state_dict['director.weight'].cpu().data.numpy()[:-1],
+            WATCHED: (
+                state_dict['watched'].cpu().data.numpy()[0],
+                state_dict['watched_bias.weight'].cpu().data.numpy()
+            ),
+            PRODUCED_BY_PRODUCER: (
+                state_dict['produced_by_producer'].cpu().data.numpy()[0],
+                state_dict['produced_by_producer_bias.weight'].cpu().data.numpy()
+            ),
+            DISTRIBUTED_BY_DISTRIBUTOR: (
+                state_dict['distributed_by_distributor'].cpu().data.numpy()[0],
+                state_dict['distributed_by_distributor_bias.weight'].cpu().data.numpy()
+            ),
+            WROTE_BY: (
+                state_dict['wrote_by'].cpu().data.numpy()[0],
+                state_dict['wrote_by_bias.weight'].cpu().data.numpy()
+            ),
+            CINEMATOGRAPHY: (
+                state_dict['cinematography'].cpu().data.numpy()[0],
+                state_dict['cinematography_bias.weight'].cpu().data.numpy()
+            ),
+            BELONG_TO: (
+                state_dict['belong_to'].cpu().data.numpy()[0],
+                state_dict['belong_to_bias.weight'].cpu().data.numpy()
+            ),
+            STARRING: (
+                state_dict['starring'].cpu().data.numpy()[0],
+                state_dict['starring_bias.weight'].cpu().data.numpy()
+            ),
+            DIRECTED_BY: (
+                state_dict['directed_by'].cpu().data.numpy()[0],
+                state_dict['directed_by_bias.weight'].cpu().data.numpy()
             ),
     }
     elif args.dataset == "lastfm":

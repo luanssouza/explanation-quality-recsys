@@ -141,9 +141,18 @@ class PathDataLoader(object):
                 pid_indegree_list.append([pid,indegree])  # idx = pid
 
             #Normalize indegree between 0 and 1
-            normalized_indegree_list = [
-                [x[0], (x[1] - smallest_indegree_value) / (biggest_indegree_value - smallest_indegree_value)] for x in
-                pid_indegree_list]
+            # normalized_indegree_list = [
+            #     [x[0], (x[1] - smallest_indegree_value) / (biggest_indegree_value - smallest_indegree_value)] for x in
+            #     pid_indegree_list]
+
+            normalized_indegree_list = []
+            for x in pid_indegree_list:
+                normalized_indegree_num = x[1] - smallest_indegree_value
+                normalized_indegree_den = biggest_indegree_value - smallest_indegree_value
+                if normalized_indegree_num and normalized_indegree_den:
+                    normalized_indegree_list.append([x[0], normalized_indegree_num / normalized_indegree_den])
+                else:
+                    normalized_indegree_list.append([x[0], 0])
 
             normalized_indegree_list.sort(key=lambda x: x[1])
             def normalized_ema(values):
@@ -152,7 +161,17 @@ class PathDataLoader(object):
                 ema_vals = values.ewm(span=10).mean().tolist()
                 min_res = min(ema_vals)
                 max_res = max(ema_vals)
-                return [(x - min_res) / (max_res - min_res) for x in ema_vals]
+
+                normalized_ema_vals = []
+                for x in ema_vals:
+                    ema_val_num = x - min_res
+                    ema_val_den = max_res - min_res
+                    if ema_val_num and ema_val_den:
+                        normalized_ema_vals.append(ema_val_num / ema_val_den)
+                    else:
+                        normalized_ema_vals.append(0)
+                return normalized_ema_vals
+                # return [(x - min_res) / (max_res - min_res) for x in ema_vals]
 
             ema_es = normalized_ema([x[1] for x in normalized_indegree_list])
             pid_weigth = {}

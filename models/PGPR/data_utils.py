@@ -7,7 +7,8 @@ import pickle
 from easydict import EasyDict as edict
 import random
 import collections
-from models.PGPR.utils import get_movie_relationships, DATASET_DIR, \
+# from models.PGPR.utils import get_movie_relationships, DATASET_DIR, \
+from utils import get_movie_relationships,  get_ml100k_relationships, DATASET_DIR, \
     get_product_id_kgid_mapping, get_song_relationships, get_uid_to_kgid_mapping
 
 
@@ -31,7 +32,7 @@ class AmazonDataset(object):
 
     def load_entities(self):
         """Load 10 global entities from data files:
-        'user','movie','actor','director','producer','production_company','category','editor','writter','cinematographer'
+        'user','movie','actor','director','producer','production_company','category','editor','writer','cinematographer'
         Create a member variable for each entity associated with attributes:
         - `vocab`: a list of string indicating entity values.
         - `vocab_size`: vocabulary size.
@@ -47,8 +48,20 @@ class AmazonDataset(object):
                     production_company='entities/production_company.txt.gz',
                     category='entities/category.txt.gz',
                     editor='entities/editor.txt.gz',
-                    writter='entities/writter.txt.gz',
+                    writer='entities/writer.txt.gz',
                     cinematographer='entities/cinematographer.txt.gz',
+            )
+        elif self.dataset_name == "ml100k":
+            entity_files = edict(
+                    user='entities/user.txt.gz',
+                    movie='entities/movie.txt.gz',
+                    producer='entities/producer.txt.gz',
+                    distributor='entities/distributor.txt.gz',
+                    writer='entities/writer.txt.gz',
+                    cinematographer='entities/cinematographer.txt.gz',
+                    category='entities/category.txt.gz',
+                    actor='entities/actor.txt.gz',
+                    director='entities/director.txt.gz',
             )
         elif self.dataset_name == "lastfm":
             entity_files = edict(
@@ -77,7 +90,7 @@ class AmazonDataset(object):
         - `review_distrib`: always 1.
         """
         review_data = []  # (user_idx, product_idx, rating out of 5, timestamp)
-        product_distrib = np.zeros(self.movie.vocab_size) if self.dataset_name == "ml1m" else np.zeros(self.song.vocab_size)
+        product_distrib = np.zeros(self.movie.vocab_size) if self.dataset_name == "ml1m" or self.dataset_name == "ml100k" else np.zeros(self.song.vocab_size)
         positive_reviews = 0
         negative_reviews = 0
         threshold = 3
@@ -101,7 +114,7 @@ class AmazonDataset(object):
                 data=review_data,
                 size=len(review_data),
                 product_distrib=product_distrib,
-                product_uniform_distrib=np.ones(self.movie.vocab_size if self.dataset_name == "ml1m" else self.song.vocab_size),
+                product_uniform_distrib=np.ones(self.movie.vocab_size if self.dataset_name == "ml1m" or self.dataset_name == "ml100k" else self.song.vocab_size),
                 review_count=len(review_data),
                 review_distrib=np.ones(len(review_data)) #set to 1 now
         )
@@ -117,7 +130,7 @@ class AmazonDataset(object):
         - 'starring': movie->actor,
         - 'belong_to': movie->category,
         - 'edited_by': movie->editor,
-        - 'written_by': movie->writter,
+        - 'written_by': movie->writer,
         - 'cinematography': movie->cinematographer,
 
         Create member variable for each relation associated with following attributes:
@@ -135,8 +148,19 @@ class AmazonDataset(object):
                     starring=('relations/starring_m_a.txt.gz', self.actor),
                     belong_to=('relations/belong_to_m_ca.txt.gz', self.category),
                     edited_by=('relations/edited_by_m_ed.txt.gz', self.editor),
-                    wrote_by=('relations/wrote_by_m_w.txt.gz', self.writter),
+                    wrote_by=('relations/wrote_by_m_w.txt.gz', self.writer),
                     cinematography=('relations/cinematography_m_ci.txt.gz', self.cinematographer),
+            )
+        elif self.dataset_name == "ml100k":
+            dataset_dir = DATASET_DIR[self.dataset_name]
+            product_relations = edict(
+                    produced_by_producer=('relations/produced_by_producer_m_pr.txt.gz', self.producer),
+                    distributed_by_distributor=('relations/distributor_m_dis.txt.gz', self.distributor),
+                    wrote_by=('relations/wrote_by_m_w.txt.gz', self.writer),
+                    cinematography=('relations/cinematography_m_ci.txt.gz', self.cinematographer),
+                    belong_to=('relations/belong_to_m_ca.txt.gz', self.category),
+                    starring=('relations/starring_m_a.txt.gz', self.actor),
+                    directed_by=('relations/directed_by_m_d.txt.gz', self.director),
             )
         elif self.dataset_name == "lastfm":
             dataset_dir = DATASET_DIR[self.dataset_name]
@@ -193,7 +217,11 @@ class AmazonDataLoader(object):
         self.dataset = dataset
         self.batch_size = batch_size
         self.review_size = self.dataset.review.size
-        self.product_relations = get_movie_relationships() if dataset.dataset_name == "ml1m" else get_song_relationships()
+
+        if dataset.dataset_name == "ml1m": self.product_relations = get_movie_relationships()
+        elif dataset.dataset_name == "ml100k": self.product_relations = get_ml100k_relationships()
+        else: self.product_relations = get_song_relationships()
+        
         self.finished_review_num = 0
         self.reset()
 
@@ -212,9 +240,12 @@ class AmazonDataLoader(object):
         review_idx = self.review_seq[self.cur_review_i]
         user_idx, product_idx, rating, _ = self.dataset.review.data[review_idx]
         product_knowledge = {pr: getattr(self.dataset, pr).data[product_idx] for pr in self.product_relations}
+        # print(self.product_relations)
 
         while len(batch) < self.batch_size:
             data = [user_idx, product_idx]
+            # print(self.product_relations)
+            # print("**************")
             for pr in self.product_relations:
                 if len(product_knowledge[pr]) <= 0:
                     data.append(-1)

@@ -30,10 +30,22 @@ class KnowledgeEmbedding(nn.Module):
                 director=edict(vocab_size=dataset.director.vocab_size),
                 production_company=edict(vocab_size=dataset.production_company.vocab_size),
                 producer=edict(vocab_size=dataset.producer.vocab_size),
-                writter=edict(vocab_size=dataset.writter.vocab_size),
+                writer=edict(vocab_size=dataset.writer.vocab_size),
                 editor=edict(vocab_size=dataset.editor.vocab_size),
                 cinematographer=edict(vocab_size=dataset.cinematographer.vocab_size),
                 category=edict(vocab_size=dataset.category.vocab_size),
+            )
+        elif self.dataset_name == "ml100k":
+            self.entities = edict(
+                user=edict(vocab_size=dataset.user.vocab_size),
+                movie=edict(vocab_size=dataset.movie.vocab_size),
+                producer=edict(vocab_size=dataset.producer.vocab_size),
+                distributor=edict(vocab_size=dataset.distributor.vocab_size),
+                writer=edict(vocab_size=dataset.writer.vocab_size),
+                cinematographer=edict(vocab_size=dataset.cinematographer.vocab_size),
+                category=edict(vocab_size=dataset.category.vocab_size),
+                actor=edict(vocab_size=dataset.actor.vocab_size),
+                director=edict(vocab_size=dataset.director.vocab_size),
             )
         elif self.dataset_name == "lastfm":
             self.entities = edict(
@@ -71,7 +83,7 @@ class KnowledgeEmbedding(nn.Module):
                     et='actor',
                     et_distrib=self._make_distrib(dataset.starring.et_distrib)),
                 wrote_by=edict(
-                    et='writter',
+                    et='writer',
                     et_distrib=self._make_distrib(dataset.wrote_by.et_distrib)),
                 edited_by=edict(
                     et='editor',
@@ -82,6 +94,33 @@ class KnowledgeEmbedding(nn.Module):
                 composed_by=edict(
                     et='composer',
                     et_distrib=self._make_distrib(dataset.composed_by.et_distrib)),
+            )
+        elif self.dataset_name == "ml100k":
+            self.relations = edict(
+                watched=edict(
+                    et='movie',
+                    et_distrib=self._make_distrib(dataset.review.product_uniform_distrib)),
+                produced_by_producer=edict(
+                    et='producer',
+                    et_distrib=self._make_distrib(dataset.produced_by_producer.et_distrib)),
+                distributed_by_distributor=edict(
+                    et='distributor',
+                    et_distrib=self._make_distrib(dataset.distributed_by_distributor.et_distrib)),
+                wrote_by=edict(
+                    et='writer',
+                    et_distrib=self._make_distrib(dataset.wrote_by.et_distrib)),
+                cinematography=edict(
+                    et='cinematographer',
+                    et_distrib=self._make_distrib(dataset.cinematography.et_distrib)),
+                belong_to=edict(
+                    et='category',
+                    et_distrib=self._make_distrib(dataset.belong_to.et_distrib)),
+                directed_by=edict(
+                    et='director',
+                    et_distrib=self._make_distrib(dataset.directed_by.et_distrib)),
+                starring=edict(
+                    et='actor',
+                    et_distrib=self._make_distrib(dataset.starring.et_distrib)),
             )
         elif self.dataset_name == "lastfm":
             self.relations = edict(
@@ -145,7 +184,7 @@ class KnowledgeEmbedding(nn.Module):
 
     def _make_distrib(self, distrib):
         """Normalize input numpy vector to distribution."""
-        distrib = np.power(np.array(distrib, dtype=np.float), 0.75)
+        distrib = np.power(np.array(distrib, dtype=np.float64), 0.75)
         distrib = distrib / distrib.sum()
         distrib = torch.FloatTensor(distrib).to(self.device)
         return distrib
@@ -166,7 +205,7 @@ class KnowledgeEmbedding(nn.Module):
             production_company_idxs = batch_idxs[:, 2]
             producer_idxs = batch_idxs[:, 3]
             editor_idxs = batch_idxs[:, 4]
-            writter_idxs = batch_idxs[:, 5]
+            writer_idxs = batch_idxs[:, 5]
             cinematographer_idxs = batch_idxs[:, 6]
             category_idxs = batch_idxs[:, 7]
             director_idxs = batch_idxs[:, 8]
@@ -209,8 +248,8 @@ class KnowledgeEmbedding(nn.Module):
                 regularizations.extend(md_embeds)
                 loss += md_loss
 
-            # movie + wrote_by -> writter
-            mw_loss, mw_embeds = self.neg_loss('movie', 'wrote_by', 'writter', movie_idxs, writter_idxs)
+            # movie + wrote_by -> writer
+            mw_loss, mw_embeds = self.neg_loss('movie', 'wrote_by', 'writer', movie_idxs, writer_idxs)
             if mw_loss is not None:
                 regularizations.extend(mw_embeds)
                 loss += mw_loss
@@ -234,6 +273,66 @@ class KnowledgeEmbedding(nn.Module):
             if mco_loss is not None:
                 regularizations.extend(mco_embeds)
                 loss += mco_loss
+
+        elif self.dataset_name == "ml100k":
+            user_idxs = batch_idxs[:, 0]
+            movie_idxs = batch_idxs[:, 1]
+            producer_idxs = batch_idxs[:, 2]
+            distributor_idxs = batch_idxs[:, 3]
+            writer_idxs = batch_idxs[:, 4]
+            cinematographer_idxs = batch_idxs[:, 5]
+            category_idxs = batch_idxs[:, 6]
+            director_idxs = batch_idxs[:, 7]
+            actor_idxs = batch_idxs[:, 8]
+            # user + watched -> movie
+            uw_loss, uw_embeds = self.neg_loss('user', 'watched', 'movie', user_idxs, movie_idxs)
+            regularizations.extend(uw_embeds)
+            loss = uw_loss
+
+            # movie + produced_by_producer -> producer
+            mpr_loss, mpr_embeds = self.neg_loss('movie', 'produced_by_producer', 'producer', movie_idxs,
+                                                 producer_idxs)
+            if mpr_loss is not None:
+                regularizations.extend(mpr_embeds)
+                loss += mpr_loss
+
+            # movie + distributed_by_distributor -> distributor
+            mdr_loss, mdr_embeds = self.neg_loss('movie', 'distributed_by_distributor', 'distributor', movie_idxs,
+                                                 distributor_idxs)
+            if mdr_loss is not None:
+                regularizations.extend(mdr_embeds)
+                loss += mdr_loss
+
+            # movie + wrote_by -> writer
+            mw_loss, mw_embeds = self.neg_loss('movie', 'wrote_by', 'writer', movie_idxs, writer_idxs)
+            if mw_loss is not None:
+                regularizations.extend(mw_embeds)
+                loss += mw_loss
+            
+            # movie + cinematography -> cinematographer
+            mci_loss, mci_embeds = self.neg_loss('movie', 'cinematography', 'cinematographer', movie_idxs,
+                                               cinematographer_idxs)
+            if mci_loss is not None:
+                regularizations.extend(mci_embeds)
+                loss += mci_loss
+
+            # product + belong_to -> category
+            mca_loss, mca_embeds = self.neg_loss('movie', 'belong_to', 'category', movie_idxs, category_idxs)
+            if mca_loss is not None:
+                regularizations.extend(mca_embeds)
+                loss += mca_loss
+            
+            # movie + directed_by -> director
+            md_loss, md_embeds = self.neg_loss('movie', 'directed_by', 'director', movie_idxs, director_idxs)
+            if md_loss is not None:
+                regularizations.extend(md_embeds)
+                loss += md_loss
+
+            # movie + starring -> actor
+            ma_loss, ma_embeds = self.neg_loss('movie', 'starring', 'actor', movie_idxs, actor_idxs)
+            if ma_loss is not None:
+                regularizations.extend(ma_embeds)
+                loss += ma_loss
 
         elif self.dataset_name == "lastfm":
             user_idxs = batch_idxs[:, 0]

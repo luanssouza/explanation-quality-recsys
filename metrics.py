@@ -3,7 +3,7 @@ from myutils import *
 from easydict import EasyDict as edict
 
 def dcg_at_k(r, k, method=1):
-    r = np.asfarray(r)[:k]
+    r = np.asarray(r)[:k]
     if r.size:
         if method == 0:
             return r[0] + np.sum(r[1:] / np.log2(np.arange(2, r.size + 1)))
@@ -87,14 +87,14 @@ def print_rec_metrics(dataset_name, metrics):
         print("{}: {:.3f}".format(metric, np.array(values["Overall"]).mean()), end=" | ")
     print("")
 
-    for attribute_category, values in attribute_list.items():
-        print("\n-Statistic with user grouped by {} attribute".format(attribute_category))
-        for attribute in values[1].values():
-            print("{} group".format(attribute), end=" ")
-            for metric_name, groups_values in metrics.items():
-                print("{}: {:.3f}".format(metric_name, np.array(groups_values[attribute]).mean()), end=" | ")
-            print("")
-    print("\n")
+    # for attribute_category, values in attribute_list.items():
+    #     print("\n-Statistic with user grouped by {} attribute".format(attribute_category))
+    #     for attribute in values[1].values():
+    #         print("{} group".format(attribute), end=" ")
+    #         for metric_name, groups_values in metrics.items():
+    #             print("{}: {:.3f}".format(metric_name, np.array(groups_values[attribute]).mean()), end=" | ")
+    #         print("")
+    # print("\n")
 
 """
 Explanation metrics
@@ -116,6 +116,8 @@ def topk_ETD(path_data):
 
 def get_attribute_list(dataset_name):
     if dataset_name == "ml1m":
+        attribute_list = {"Gender": [], "Age": [], "Occupation": []}
+    elif dataset_name == "ml100k":
         attribute_list = {"Gender": [], "Age": [], "Occupation": []}
     elif dataset_name == "lastfm":
         attribute_list = {"Gender": [], "Age": []}
@@ -236,7 +238,7 @@ def avg_LIR(path_data, attribute_name="Gender"):
             groups_LIR_scores[attr_name].append(LIR_score)
         groups_LIR_scores["Overall"].append(LIR_score)
 
-
+    print(groups_LIR_scores)
     for attribute_label, group_scores in groups_LIR_scores.items():
          avg_groups_LIR[attribute_label] = np.array(group_scores).mean()
 

@@ -5,10 +5,14 @@ def save_pred_paths(folder_path, pred_paths, train_labels):
     #Get min and max score to performe normalization between 0 and 1
     score_list = []
     for uid, pid in pred_paths.items():
+        # print(uid, pid)
         for pid, path_list in pred_paths[uid].items():
+            # print(pid)
+            # print(path_list)
             if pid in set(train_labels[uid]): continue
             for path in path_list:
                 score_list.append(float(path[0]))
+    # print(score_list)
     min_score = min(score_list)
     max_score = max(score_list)
 

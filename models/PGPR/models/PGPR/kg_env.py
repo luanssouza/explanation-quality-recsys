@@ -1,15 +1,10 @@
 from __future__ import absolute_import, division, print_function
 
-import os
-import sys
-from tqdm import tqdm
-import pickle
+import numpy as np
 import random
-import torch
-from datetime import datetime
 
-from knowledge_graph import KnowledgeGraph
-from utils import *
+from models.PGPR.pgpr_utils import load_kg, load_embed, USER, SELF_LOOP, load_labels, MAIN_PRODUCT_INTERACTION, PATH_PATTERN, \
+    KG_RELATION
 
 
 class KGState(object):
@@ -39,7 +34,7 @@ class KGState(object):
 
 
 class BatchKGEnvironment(object):
-    def __init__(self, dataset_str, max_acts, max_path_len=3, state_history=1):
+    def __init__(self, dataset_str, max_acts, max_path_len=3, state_history=1, optimize_for=None, alpha=None):
         self.max_acts = max_acts
         self.act_dim = max_acts + 1  # Add self-loop action, whose act_idx is always 0.
         self.max_num_nodes = max_path_len + 1  # max number of hops (= #nodes - 1)
@@ -50,38 +45,29 @@ class BatchKGEnvironment(object):
         self.state_gen = KGState(self.embed_size, history_len=state_history)
         self.state_dim = self.state_gen.dim
         self.dataset_name = dataset_str
-        print(self.embeds.keys())
+        self.train_labels = load_labels(dataset_str, 'train')
         # Compute user-product scores for scaling.
-        if dataset_str == "ml1m":
-            u_p_scores = np.dot(self.embeds[USER] + self.embeds[WATCHED][0], self.embeds[MOVIE].T)
-        elif dataset_str == "lastfm":
-            u_p_scores = np.dot(self.embeds[USER] + self.embeds[LISTENED][0], self.embeds[SONG].T)
-        elif dataset_str == "ml100k":
-            u_p_scores = np.dot(self.embeds[USER] + self.embeds[WATCHED][0], self.embeds[MOVIE].T)
+        main_entity, main_relation = MAIN_PRODUCT_INTERACTION[dataset_str]
+        u_p_scores = np.dot(self.embeds[USER] + self.embeds[main_relation][0], self.embeds[main_entity].T)
         self.u_p_scales = np.max(u_p_scores, axis=1)
+
+        # self.p_e_scales = {}
+        # entity_relations = KG_RELATION[dataset_str][main_entity]
+        # for relation, entity in entity_relations.items():
+        #    p_e_scores = np.dot(self.embeds[entity] + self.embeds[relation][0], self.embeds[main_entity].T)
+        #    self.p_e_scales[entity] = np.max(p_e_scores, axis=1)
 
         # Compute path patterns
         self.patterns = []
 
         # Changing according to the dataset
-        if self.dataset_name == "ml1m":
-            valid_patterns = list(ML1M_PATH_PATTERN.keys())
-            PATH_PATTERN = ML1M_PATH_PATTERN
-        if self.dataset_name == "ml100k":
-            valid_patterns = list(ML100k_PATH_PATTERN.keys())
-            PATH_PATTERN = ML100k_PATH_PATTERN
-        elif self.dataset_name == "lastfm":
-            valid_patterns = list(LASTFM_PATH_PATTERN.keys())
-            PATH_PATTERN = LASTFM_PATH_PATTERN
-        
-        # valid_patterns = list(ML1M_PATH_PATTERN.keys()) if self.dataset_name == "ml1m" else list(LASTFM_PATH_PATTERN.keys())
-        # PATH_PATTERN = ML1M_PATH_PATTERN if self.dataset_name == "ml1m" else LASTFM_PATH_PATTERN
+        valid_patterns = list(PATH_PATTERN[self.dataset_name].keys())
 
         for pattern_id in valid_patterns:
-            pattern = PATH_PATTERN[pattern_id]
+            pattern = PATH_PATTERN[self.dataset_name][pattern_id]
             pattern = [SELF_LOOP] + [v[0] for v in pattern[1:]]  # pattern contains all relations
-            #if pattern_id == 1:
-            #    pattern.append(SELF_LOOP)
+            if len(pattern) == 3:  # Len 3 must be normalized to 4
+                pattern.append(SELF_LOOP)
             self.patterns.append(tuple(pattern))
 
         # Following is current episode information.
@@ -102,19 +88,7 @@ class BatchKGEnvironment(object):
     def _get_actions(self, path, done):
         """Compute actions for current node."""
 
-        # Changing according to the dataset
-        if self.dataset_name == "ml1m":
-            KG_RELATION = ML1M_KG_RELATION
-            main_product = MOVIE
-            review_interaction = WATCHED
-        elif self.dataset_name == "lastfm":
-            KG_RELATION = LASTFM_KG_RELATION
-            main_product = SONG
-            review_interaction = LISTENED
-        elif self.dataset_name == "ml100k":
-            KG_RELATION = ML100K_KG_RELATION
-            main_product = MOVIE
-            review_interaction = WATCHED
+        main_product, review_interaction = MAIN_PRODUCT_INTERACTION[self.dataset_name]
 
         _, curr_node_type, curr_node_id = path[-1]
         actions = [(SELF_LOOP, curr_node_id)]  # self-loop must be included.
@@ -129,7 +103,8 @@ class BatchKGEnvironment(object):
         candidate_acts = []  # list of tuples of (relation, node_type, node_id)
         visited_nodes = set([(v[1], v[2]) for v in path])
         for r in relations_nodes:
-            next_node_type = KG_RELATION[curr_node_type][r]
+            # if r not in KG_RELATION[self.dataset_name][curr_node_type]: continue
+            next_node_type = KG_RELATION[self.dataset_name][curr_node_type][r]  # Changing according to the dataset
             next_node_ids = relations_nodes[r]
             next_node_ids = [n for n in next_node_ids if (next_node_type, n) not in visited_nodes]  # filter
             candidate_acts.extend(zip([r] * len(next_node_ids), next_node_ids))
@@ -145,22 +120,23 @@ class BatchKGEnvironment(object):
             return actions
 
         # (5) If there are too many actions, do some deterministic trimming here!
-        user_embed = self.embeds[USER][path[0][-1]]
+        uid = path[0][-1]
+        user_embed = self.embeds[USER][uid]
+
         scores = []
         for r, next_node_id in candidate_acts:
-            next_node_type = KG_RELATION[curr_node_type][r]
+            next_node_type = KG_RELATION[self.dataset_name][curr_node_type][r]  # Changing according to the dataset
             if next_node_type == USER:
                 src_embed = user_embed
             elif next_node_type == main_product:
                 src_embed = user_embed + self.embeds[review_interaction][0]
-            #elif next_node_type == WORD:
-            #    src_embed = user_embed + self.embeds[MENTION][0]
             else:  # BRAND, CATEGORY, RELATED_PRODUCT
                 src_embed = user_embed + self.embeds[main_product][0] + self.embeds[r][0]
             score = np.matmul(src_embed, self.embeds[next_node_type][next_node_id])
+
             # This trimming may filter out target products!
             # Manually set the score of target products a very large number.
-            #if next_node_type == MOVIE and next_node_id in self._target_pids:
+            # if next_node_type == MOVIE and next_node_id in self._target_pids:
             #    score = 99999.0
             scores.append(score)
         candidate_idxs = np.argsort(scores)[-self.max_acts:]  # choose actions with larger scores
@@ -200,10 +176,11 @@ class BatchKGEnvironment(object):
         batch_state = [self._get_state(path) for path in batch_path]
         return np.vstack(batch_state)  # [bs, dim]
 
-    #MITIGATION: You can weight rewards here, pay attention to the scale since the reward are given based on
+    # MITIGATION: You can weight rewards here, pay attention to the scale since the reward are given based on
     # embeds dot prod
     def _get_reward(self, path):
         # If it is initial state or 1-hop search, reward is 0.
+        uid = path[0][-1]
         if len(path) <= 2:
             return 0.0
 
@@ -212,30 +189,15 @@ class BatchKGEnvironment(object):
 
         target_score = 0.0
         _, curr_node_type, curr_node_id = path[-1]
-        if self.dataset_name == "ml1m":
-            if curr_node_type == MOVIE:
-                # Give soft reward for other reached products.
-                uid = path[0][-1]
-                u_vec = self.embeds[USER][uid] + self.embeds[WATCHED][0]
-                p_vec = self.embeds[MOVIE][curr_node_id]
-                score = np.dot(u_vec, p_vec) / self.u_p_scales[uid]
-                target_score = max(score, 0.0)
-        if self.dataset_name == "ml100k":
-            if curr_node_type == MOVIE:
-                # Give soft reward for other reached products.
-                uid = path[0][-1]
-                u_vec = self.embeds[USER][uid] + self.embeds[WATCHED][0]
-                p_vec = self.embeds[MOVIE][curr_node_id]
-                score = np.dot(u_vec, p_vec) / self.u_p_scales[uid]
-                target_score = max(score, 0.0)
-        else:
-            if curr_node_type == SONG:
-                # Give soft reward for other reached products.
-                uid = path[0][-1]
-                u_vec = self.embeds[USER][uid] + self.embeds[LISTENED][0]
-                p_vec = self.embeds[SONG][curr_node_id]
-                score = np.dot(u_vec, p_vec) / self.u_p_scales[uid]
-                target_score = max(score, 0.0)
+        main_entity, main_relation = MAIN_PRODUCT_INTERACTION[self.dataset_name]
+        if curr_node_type == main_entity:
+            # Give soft reward for other reached products.
+            uid = path[0][-1]
+            relation, shared_entity, eid = path[2]
+            u_vec = self.embeds[USER][uid] + self.embeds[main_relation][0]
+            p_vec = self.embeds[main_entity][curr_node_id]
+            score = (np.dot(u_vec, p_vec) / self.u_p_scales[uid])
+            target_score = max(score, 0.0)
         return target_score
 
     def _batch_get_reward(self, batch_path):
@@ -251,7 +213,6 @@ class BatchKGEnvironment(object):
             all_uids = list(self.kg(USER).keys())
             uids = [random.choice(all_uids)]
 
-        # each element is a tuple of (relation, entity_type, entity_id)
         self._batch_path = [[(SELF_LOOP, USER, uid)] for uid in uids]
         self._done = False
         self._batch_curr_state = self._batch_get_state(self._batch_path)
@@ -271,13 +232,6 @@ class BatchKGEnvironment(object):
         """
         assert len(batch_act_idx) == len(self._batch_path)
 
-        # Changing according to the dataset
-        if self.dataset_name == "ml1m": KG_RELATION = ML1M_KG_RELATION
-        elif self.dataset_name == "ml100k": KG_RELATION = ML100K_KG_RELATION
-        else: KG_RELATION = LASTFM_KG_RELATION
-        # KG_RELATION = ML1M_KG_RELATION if self.dataset_name == "ml1m" else LASTFM_KG_RELATION
-        # KG_RELATION = ML1M_KG_RELATION if self.dataset_name == "ml1m" else LASTFM_KG_RELATION
-
         # Execute batch actions.
         for i in range(len(batch_act_idx)):
             act_idx = batch_act_idx[i]
@@ -286,7 +240,8 @@ class BatchKGEnvironment(object):
             if relation == SELF_LOOP:
                 next_node_type = curr_node_type
             else:
-                next_node_type = KG_RELATION[curr_node_type][relation]
+                next_node_type = KG_RELATION[self.dataset_name][curr_node_type][
+                    relation]  # Changing according to the dataset
             self._batch_path[i].append((relation, next_node_type, next_node_id))
 
         self._done = self._is_done()  # must run before get actions, etc.
@@ -296,8 +251,6 @@ class BatchKGEnvironment(object):
 
         return self._batch_curr_state, self._batch_curr_reward, self._done
 
-    #MITIGATION: Random sample the actions beloning to watched and beleng to, take all the others since the
-    # relations are highly unbalanced. You can pick the watched actions based on the timestamp as well
     def batch_action_mask(self, dropout=0.0):
         """Return action masks of size [bs, act_dim]."""
         batch_mask = []
@@ -318,4 +271,3 @@ class BatchKGEnvironment(object):
             for node in path[1:]:
                 msg += ' =={}=> {}({})'.format(node[0], node[1], node[2])
             print(msg)
-

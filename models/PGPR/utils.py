@@ -14,31 +14,44 @@ import torch
 # Dataset names.
 ML1M = 'ml1m'
 LASTFM = 'lastfm'
+ML100K = 'ml100k'
 # Dataset directories.
 DATASET_DIR = {
     ML1M: '../../datasets/ml1m',
-    LASTFM: '../../datasets/lastfm'
+    LASTFM: '../../datasets/lastfm',
+    ML100K: '../../datasets/ml100k'
 }
 
 # Model result directories.
 TMP_DIR = {
     ML1M: 'tmp/ml1m',
-    LASTFM: 'tmp/lastfm'
+    LASTFM: 'tmp/lastfm',
+    ML100K: 'tmp/ml100k'
 }
 
 # Label files.
 LABELS = {
     ML1M: (TMP_DIR[ML1M] + '/train_label.pkl', TMP_DIR[ML1M] + '/test_label.pkl'),
     LASTFM: (TMP_DIR[LASTFM] + '/train_label.pkl', TMP_DIR[LASTFM] + '/test_label.pkl'),
-
+    ML100K: (TMP_DIR[ML100K] + '/train_label.pkl', TMP_DIR[ML100K] + '/test_label.pkl'),
 }
+#ML100K ENTITIES
+MOVIE = 'movie'
+PRODUCER = 'producer'
+DISTRIBUTOR = 'distributor'
+WRITER = 'writer'
+CINEMATOGRAPHER = 'cinematographer'
+CATEGORY = 'category'
+ACTOR = 'actor'
+DIRECTOR = 'director'
+
 #ML1M ENTITIES
 MOVIE = 'movie'
 ACTOR = 'actor'
 DIRECTOR = 'director'
 PRODUCTION_COMPANY = 'production_company'
 EDITOR = 'editor'
-WRITTER = 'writter'
+WRITER = 'writer'
 CINEMATOGRAPHER = 'cinematographer'
 COMPOSER = 'composer'
 
@@ -64,8 +77,19 @@ ENTITY_LIST = {
         PRODUCTION_COMPANY,
         CATEGORY,
         EDITOR,
-        WRITTER,
+        WRITER,
         CINEMATOGRAPHER,
+    ],
+    ML100K: [
+        USER,
+        MOVIE,
+        PRODUCER,
+        DISTRIBUTOR,
+        WRITER,
+        CINEMATOGRAPHER,
+        CATEGORY,
+        ACTOR,
+        DIRECTOR,
     ],
     LASTFM: [
         USER,
@@ -75,6 +99,19 @@ ENTITY_LIST = {
         PRODUCER
     ],
 }
+
+# ML100K RELATIONS
+DISTRIBUTED_BY_DISTRIBUTOR = 'distributed_by_distributor'
+DIRECTED_BY_DIRECTOR = 'directed_by_director'
+PRODUCED_BY_COMPANY = 'produced_by_prodcompany'
+STARRED_BY_ACTOR = 'starred_by_actor'
+RELATED_TO_WIKIPAGE = 'related_to_wikipage'
+EDITED_BY_EDITOR = 'edited_by_editor'
+WROTE_BY_WRITER = 'wrote_by_writer'
+CINEMATOGRAPHY_BY_CINEMATOGRAPHER = 'cinematography_by_cinematographer'
+COMPOSED_BY_COMPOSER = 'composed_by_composer'
+PRODUCED_IN_COUNTRY = 'produced_in_country'
+BELONG_TO_CATEGORY = 'belong_to_category'
 
 #ML1M RELATIONS
 WATCHED = 'watched'
@@ -122,6 +159,16 @@ RELATION_LIST = {
         18: "http://dbpedia.org/ontology/director",
         19: "http://dbpedia.org/ontology/award",
     },
+    ML100K: {
+        0: "http://dbpedia.org/property/producers",
+        1: "http://dbpedia.org/property/distributor",
+        # Distributor
+        2: "http://dbpedia.org/property/allWriting",
+        3: "http://dbpedia.org/ontology/cinematography",
+        4: "http://purl.org/dc/terms/subject",
+        5: "http://dbpedia.org/ontology/starring",
+        6: "http://dbpedia.org/ontology/director",
+    },
     LASTFM: {
         0: "http://rdf.freebase.com/ns/common.topic.notable_types",
         1: "http://rdf.freebase.com/ns/music.recording.releases",
@@ -134,9 +181,6 @@ RELATION_LIST = {
         8: "http://rdf.freebase.com/ns/music.recording.featured_artists",
     },
 }
-
-
-
 
 LASTFM_KG_RELATION = {
     USER: {
@@ -188,7 +232,7 @@ ML1M_KG_RELATION = {
         PRODUCED_BY_COMPANY: PRODUCTION_COMPANY,
         PRODUCED_BY_PRODUCER: PRODUCER,
         EDITED_BY: EDITOR,
-        WROTE_BY: WRITTER,
+        WROTE_BY: WRITER,
         CINEMATOGRAPHY: CINEMATOGRAPHER,
         BELONG_TO: CATEGORY,
         DIRECTED_BY: DIRECTOR,
@@ -204,7 +248,7 @@ ML1M_KG_RELATION = {
     PRODUCER: {
         PRODUCED_BY_PRODUCER: MOVIE,
     },
-    WRITTER: {
+    WRITER: {
         WROTE_BY: MOVIE,
     },
     EDITOR: {
@@ -217,6 +261,55 @@ ML1M_KG_RELATION = {
         CINEMATOGRAPHY: MOVIE,
     },
 }
+
+ML100K_KG_RELATION =  {
+    USER: {
+        WATCHED: MOVIE,
+    },
+    ACTOR: {
+        STARRING: MOVIE,
+    },
+    DIRECTOR: {
+        DIRECTED_BY: MOVIE,
+    },
+    MOVIE: {
+        WATCHED: USER,
+        PRODUCED_BY_PRODUCER: PRODUCER,
+        DISTRIBUTED_BY_DISTRIBUTOR: DISTRIBUTOR,
+        WROTE_BY: WRITER,
+        CINEMATOGRAPHY: CINEMATOGRAPHER,
+        BELONG_TO: CATEGORY,
+        DIRECTED_BY: DIRECTOR,
+        STARRING: ACTOR,
+    },
+    DISTRIBUTOR: {
+        DISTRIBUTED_BY_DISTRIBUTOR: MOVIE,
+    },
+    PRODUCER: {
+        PRODUCED_BY_PRODUCER: MOVIE,
+    },
+    WRITER: {
+        WROTE_BY: MOVIE,
+    },
+    CATEGORY: {
+        BELONG_TO: MOVIE,
+    },
+    CINEMATOGRAPHER: {
+        CINEMATOGRAPHY: MOVIE,
+    }
+}   
+
+ML100k_PATH_PATTERN = {
+    # length = 4
+    0: ((None, USER), (WATCHED, MOVIE), (PRODUCED_BY_PRODUCER, PRODUCER), (PRODUCED_BY_PRODUCER, MOVIE)),
+    1: ((None, USER), (WATCHED, MOVIE), (DISTRIBUTED_BY_DISTRIBUTOR, DISTRIBUTOR), (DISTRIBUTED_BY_DISTRIBUTOR, MOVIE)),
+    2: ((None, USER), (WATCHED, MOVIE), (WROTE_BY, WRITER), (WROTE_BY, MOVIE)),
+    3: ((None, USER), (WATCHED, MOVIE), (CINEMATOGRAPHY, CINEMATOGRAPHER), (CINEMATOGRAPHY, MOVIE)),
+    4: ((None, USER), (WATCHED, MOVIE), (BELONG_TO, CATEGORY), (BELONG_TO, MOVIE)),
+    5: ((None, USER), (WATCHED, MOVIE), (STARRING, ACTOR), (STARRING, MOVIE)),
+    6: ((None, USER), (WATCHED, MOVIE), (DIRECTED_BY, DIRECTOR), (DIRECTED_BY, MOVIE)),
+}
+
 ML1M_PATH_PATTERN = {
     # length = 4
     0: ((None, USER), (WATCHED, MOVIE), (CINEMATOGRAPHY, CINEMATOGRAPHER), (CINEMATOGRAPHY, MOVIE)),
@@ -227,7 +320,7 @@ ML1M_PATH_PATTERN = {
     10: ((None, USER), (WATCHED, MOVIE), (STARRING, ACTOR), (STARRING, MOVIE)),
     14: ((None, USER), (WATCHED, MOVIE), (EDITED_BY, EDITOR), (EDITED_BY, MOVIE)),
     15: ((None, USER), (WATCHED, MOVIE), (PRODUCED_BY_PRODUCER, PRODUCER), (PRODUCED_BY_PRODUCER, MOVIE)),
-    16: ((None, USER), (WATCHED, MOVIE), (WROTE_BY, WRITTER), (WROTE_BY, MOVIE)),
+    16: ((None, USER), (WATCHED, MOVIE), (WROTE_BY, WRITER), (WROTE_BY, MOVIE)),
     18: ((None, USER), (WATCHED, MOVIE), (DIRECTED_BY, DIRECTOR), (DIRECTED_BY, MOVIE)),
     20: ((None, USER), (WATCHED, MOVIE), (WATCHED, USER), (WATCHED, MOVIE)),
 }
@@ -245,14 +338,19 @@ LASTFM_PATH_PATTERN = {
     9: ((None, USER), (LISTENED, SONG), (LISTENED, USER), (LISTENED, SONG)),
 }
 
-ML1M_TAIL_ENTITY_NAME = {0: CINEMATOGRAPHER, 1: PRODUCTION_COMPANY, 2: COMPOSER, 3: CATEGORY, 8: CATEGORY, 10: ACTOR, 14: EDITOR, 15: PRODUCER, 16: WRITTER, 18: DIRECTOR}
+ML100K_TAIL_ENTITY_NAME = {0: PRODUCER, 1: DISTRIBUTOR, 2: WRITER, 3: CINEMATOGRAPHER, 4: CATEGORY, 5: ACTOR, 6: DIRECTOR}
+ML100K_RELATION_NAME = {0: PRODUCED_BY_PRODUCER, 1: DISTRIBUTED_BY_DISTRIBUTOR, 2: WROTE_BY, 3: CINEMATOGRAPHY,  4: BELONG_TO, 5: STARRING, 6: DIRECTED_BY}
+
+ML1M_TAIL_ENTITY_NAME = {0: CINEMATOGRAPHER, 1: PRODUCTION_COMPANY, 2: COMPOSER, 3: CATEGORY, 8: CATEGORY, 10: ACTOR, 14: EDITOR, 15: PRODUCER, 16: WRITER, 18: DIRECTOR}
 ML1M_RELATION_NAME = {0: CINEMATOGRAPHY, 1: PRODUCED_BY_COMPANY, 2: COMPOSED_BY, 3: BELONG_TO,  8: BELONG_TO, 10: STARRING, 14: EDITED_BY, 15: PRODUCED_BY_PRODUCER, 16: WROTE_BY, 18: DIRECTED_BY, 20: WATCHED}
 LASTFM_RELATION_NAME = {0: BELONG_TO, 1: RELATED_TO, 2: SANG_BY, 3: MIXED_BY, 4: PRODUCED_BY_PRODUCER, 5: ORIGINAL_VERSION_OF, 6: RELATED_TO, 7: ALTERNATIVE_VERSION_OF, 8: FEATURED_BY}
 LASTFM_TAIL_ENTITY_NAME = {0: CATEGORY, 1: RELATED_SONG, 2: ARTIST, 3: ENGINEER, 4: PRODUCER, 5: RELATED_SONG, 6: RELATED_SONG, 7: RELATED_SONG, 8: ARTIST}
 
 def get_relations_names(dataset_name):
     relations = []
-    relations_k_v = ML1M_RELATION_NAME if dataset_name == "ml1m" else LASTFM_RELATION_NAME
+    if dataset_name == "ml1m": relations_k_v = ML1M_RELATION_NAME
+    elif dataset_name == "ml100k": relations_k_v = ML100K_RELATION_NAME
+    else: relations_k_v = LASTFM_RELATION_NAME
     for k, v in relations_k_v.items():
         relations.append(v)
     return relations
@@ -266,6 +364,8 @@ def get_user2gender(dataset_name):
     for row in csv_reader:
         row = row[0].strip().split('\t')
         if dataset_name == "ml1m":
+            uid_gender[uid_mapping[int(row[0])]] = 0 if row[1] == 'M' else 1
+        elif dataset_name == "ml100k":
             uid_gender[uid_mapping[int(row[0])]] = 0 if row[1] == 'M' else 1
         else:
             uid_gender[uid_mapping[int(row[0])]] = 0 if row[1] == 'm' else 1
@@ -294,15 +394,26 @@ def get_user2occupation():
     return uid_occ, occ2name
 
 def get_entities(dataset_name):
-    return list(ML1M_KG_RELATION.keys()) if dataset_name == "ml1m" else list(LASTFM_KG_RELATION.keys())
+    if dataset_name == ML1M: ans = ML1M_KG_RELATION.keys()
+    elif dataset_name == ML100K: ans = ML100K_KG_RELATION.keys()
+    else: ans = LASTFM_KG_RELATION.keys()
+    return list(ans)
 
 def get_entities_without_user(dataset_name):
-    ans = list(ML1M_KG_RELATION.keys()) if dataset_name == ML1M else list(LASTFM_KG_RELATION.keys())
+    if dataset_name == ML1M: ans = ML1M_KG_RELATION.keys()
+    elif dataset_name == ML100K: ans = ML100K_KG_RELATION.keys()
+    else: ans = LASTFM_KG_RELATION.keys()
+    ans = list(ans)
     ans.remove('user')
     return ans
 
 def get_movie_relationships():
     ans = list(ML1M_KG_RELATION[MOVIE].keys())
+    ans.remove(WATCHED)
+    return ans
+
+def get_ml100k_relationships():
+    ans = list(ML100K_KG_RELATION[MOVIE].keys())
     ans.remove(WATCHED)
     return ans
 
@@ -312,17 +423,24 @@ def get_song_relationships():
     return ans
 
 def get_tail_entity_name(dataset, relationship_id):
-    return ML1M_TAIL_ENTITY_NAME[relationship_id] if dataset == ML1M else LASTFM_TAIL_ENTITY_NAME[relationship_id]
+    if dataset == ML1M: return ML1M_TAIL_ENTITY_NAME[relationship_id]
+    elif dataset == ML100K: return ML100K_TAIL_ENTITY_NAME[relationship_id]
+    return LASTFM_TAIL_ENTITY_NAME[relationship_id]
 
 def get_movie_relations(entity_head):
     return list(ML1M_KG_RELATION[entity_head].keys())
+
+def get_ml100k_relations(entity_head):
+    return list(ML100K_KG_RELATION[entity_head].keys())
 
 def get_song_relations(entity_head=SONG):
     return list(LASTFM_KG_RELATION[entity_head].keys())
 
 
 def get_entity_tail(dataset_name, entity_head, relation):
-    return ML1M_KG_RELATION[entity_head][relation] if dataset_name == "ml1m" else LASTFM_KG_RELATION[entity_head][relation]
+    if dataset_name == ML1M: return ML1M_KG_RELATION[entity_head][relation]
+    elif dataset_name == ML100K: return ML100K_KG_RELATION[entity_head][relation]
+    return LASTFM_KG_RELATION[entity_head][relation]
 
 
 # def compute_tfidf_fast(vocab, docs):
@@ -431,7 +549,7 @@ def get_path_pattern(path):
     10: ((None, USER), (WATCHED, MOVIE), (STARRING, ACTOR), (STARRING, MOVIE)),
     14: ((None, USER), (WATCHED, MOVIE), (EDITED_BY, EDITOR), (EDITED_BY, MOVIE)),
     15: ((None, USER), (WATCHED, MOVIE), (PRODUCED_BY_PRODUCER, PRODUCER), (PRODUCED_BY_PRODUCER, MOVIE)),
-    16: ((None, USER), (WATCHED, MOVIE), (WROTE_BY, WRITTER), (WROTE_BY, MOVIE)),
+    16: ((None, USER), (WATCHED, MOVIE), (WROTE_BY, WRITER), (WROTE_BY, MOVIE)),
     18: ((None, USER), (WATCHED, MOVIE), (DIRECTED_BY, DIRECTOR), (DIRECTED_BY, MOVIE)),
     '''
 

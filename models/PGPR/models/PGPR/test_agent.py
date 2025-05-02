@@ -3,17 +3,17 @@ from __future__ import absolute_import, division, print_function
 import os
 import argparse
 from math import log
-
-import torch as torch
+import numpy as np
+import torch
+import json
 from easydict import EasyDict as edict
 from tqdm import tqdm
 from functools import reduce
-from kg_env import BatchKGEnvironment
-from myutils import get_interaction2timestamp
-from train_agent import ActorCritic
-from utils import *
-from extract_predicted_paths import *
-import pandas as pd
+from models.PGPR.kg_env import BatchKGEnvironment
+from models.PGPR.train_agent import ActorCritic
+from models.PGPR.pgpr_utils import *
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)   
 
 def evaluate(dataset_name, topk_matches, test_user_products):
     """Compute metrics for predicted recommendations.
@@ -21,42 +21,19 @@ def evaluate(dataset_name, topk_matches, test_user_products):
         topk_matches: a list or dict of product ids in ascending order.
     """
     invalid_users = []
-    attribute_name = "Gender"
-    if attribute_name == "Gender":
-        user2attribute, attribute2name = get_user2gender(dataset_name)
-    elif attribute_name == "Age":
-        user2attribute, attribute2name = get_user2age()
-    elif attribute_name == "Occupation":
-        user2attribute, attribute2name = get_user2occupation()
-    else:
-        print("Not existing attribute selected attribute")
-        return
     # Compute metrics
     metrics = edict(
-        ndcg=edict(
-            Male=[],
-            Female=[],
-            Overall=[]
-        ),
-        hr=edict(
-            Male=[],
-            Female=[],
-            Overall=[]
-        ),
-        precision=edict(
-            Male=[],
-            Female=[],
-            Overall=[]
-        ),
-        recall=edict(
-            Male=[],
-            Female=[],
-            Overall=[]
-        ),
+        # ndcg_other=[],
+        ndcg=[],
+        hr=[],
+        precision=[],
+        recall=[],
 
     )
-    #uid2gender, gender2name = get_user2gender(dataset_name)
+    ndcgs = []
+    # uid2gender, gender2name = get_user2gender(dataset_name)
     test_user_idxs = list(test_user_products.keys())
+    rel_size = []
     for uid in test_user_idxs:
         if uid not in topk_matches or len(topk_matches[uid]) < 10:
             invalid_users.append(uid)
@@ -64,7 +41,7 @@ def evaluate(dataset_name, topk_matches, test_user_products):
         pred_list, rel_set = topk_matches[uid][::-1], test_user_products[uid]
         if len(pred_list) == 0:
             continue
-
+        rel_size.append(len(rel_set))
         k = 0
         hit_num = 0.0
         hit_list = []
@@ -80,36 +57,33 @@ def evaluate(dataset_name, topk_matches, test_user_products):
         recall = hit_num / len(rel_set)
         precision = hit_num / len(pred_list)
         hit = 1.0 if hit_num > 0.0 else 0.0
-
-        # Based on attribute
-#        attribute_val = uid2gender[uid]
-#        gender = gender2name[attribute_val]
-        all = "Overall"
-
-        # According to gender
- #       metrics.ndcg[gender].append(ndcg)
-#        metrics.recall[gender].append(recall)
- #       metrics.precision[gender].append(precision)
- #       metrics.hr[gender].append(hit)
-
         # General
-        metrics.ndcg[all].append(ndcg)
-        metrics.hr[all].append(hit)
-        metrics.recall[all].append(recall)
-        metrics.precision[all].append(precision)
+        # metrics.ndcg_other.append(ndcg_other)
+        metrics.ndcg.append(ndcg)
+        metrics.hr.append(hit)
+        metrics.recall.append(recall)
+        metrics.precision.append(precision)
 
-    for metric, groups_values in metrics.items():
-        for group_id, values in groups_values.items():
-            avg_metric_value = np.mean(values)
-            n_users = len(values)
-            print("{} group  {}, noOfUser={}, PGPR {}={:.4f}".format(attribute_name, group_id, n_users, metric,
-                                                                       avg_metric_value))
+    avg_metrics = edict(
+        ndcg=[],
+        hr=[],
+        precision=[],
+        recall=[],
+    )
+    print("Average test set size: ", np.array(rel_size).mean())
+    for metric, values in metrics.items():
+        avg_metrics[metric] = np.mean(values)
+        avg_metric_value = np.mean(values) * 100 if metric == "ndcg_other" else np.mean(values)
+        n_users = len(values)
+        print("Overall for noOfUser={}, {}={:.4f}".format(n_users, metric,
+                                                          avg_metric_value))
         print("\n")
-
+    makedirs(dataset_name)
+    with open(RECOM_METRICS_FILE_PATH[dataset_name], 'w') as f:
+        json.dump(metrics,f)
 
 def dcg_at_k(r, k, method=1):
-    # r = np.asfarray(r)[:k]
-    r = np.asarray(r)[:k]
+    r = np.asfarray(r)[:k]
     if r.size:
         if method == 0:
             return r[0] + np.sum(r[1:] / np.log2(np.arange(2, r.size + 1)))
@@ -127,7 +101,7 @@ def ndcg_at_k(r, k, method=1):
     return dcg_at_k(r, k, method) / dcg_max
 
 
-def batch_beam_search(env, model, uids, device, topk=[25, 5, 1]):
+def batch_beam_search(env, model, uids, device, intrain=None, topk=[25, 5, 1]):
     def _batch_acts_to_masks(batch_acts):
         batch_masks = []
         for acts in batch_acts:
@@ -136,11 +110,6 @@ def batch_beam_search(env, model, uids, device, topk=[25, 5, 1]):
             act_mask[:num_acts] = 1
             batch_masks.append(act_mask)
         return np.vstack(batch_masks)
-
-    # Changing according to the dataset
-    if  env.dataset_name == "ml1m": KG_RELATION = ML1M_KG_RELATION 
-    elif env.dataset_name == "ml100k": KG_RELATION = ML100K_KG_RELATION
-    else: KG_RELATION = LASTFM_KG_RELATION
 
     state_pool = env.reset(uids)  # numpy of [bs, dim]
     path_pool = env._batch_path  # list of list, size=bs
@@ -152,11 +121,14 @@ def batch_beam_search(env, model, uids, device, topk=[25, 5, 1]):
         actmask_pool = _batch_acts_to_masks(acts_pool)  # numpy of [bs, dim]
         actmask_tensor = torch.ByteTensor(actmask_pool).to(device)
         probs, _ = model((state_tensor, actmask_tensor))  # Tensor of [bs, act_dim]
-        probs = probs + actmask_tensor.float()  # In order to differ from masked actions
+
+        probs_max, _ = torch.max(probs, 0)
+        probs_min, _ = torch.min(probs, 0)
+
         topk_probs, topk_idxs = torch.topk(probs, topk[hop], dim=1)  # LongTensor of [bs, k]
         topk_idxs = topk_idxs.detach().cpu().numpy()
         topk_probs = topk_probs.detach().cpu().numpy()
-        
+
         new_path_pool, new_probs_pool = [], []
         for row in range(topk_idxs.shape[0]):
             path = path_pool[row]
@@ -165,10 +137,13 @@ def batch_beam_search(env, model, uids, device, topk=[25, 5, 1]):
                 if idx >= len(acts_pool[row]):  # act idx is invalid
                     continue
                 relation, next_node_id = acts_pool[row][idx]  # (relation, next_node_id)
+
                 if relation == SELF_LOOP:
                     next_node_type = path[-1][1]
                 else:
-                    next_node_type = KG_RELATION[path[-1][1]][relation]
+                    next_node_type = KG_RELATION[env.dataset_name][path[-1][1]][
+                        relation]  # Changing according to the dataset
+
                 new_path = path + [(relation, next_node_type, next_node_id)]
                 new_path_pool.append(new_path)
                 new_probs_pool.append(probs + [p])
@@ -184,7 +159,7 @@ def predict_paths(policy_file, path_file, args):
     print('Predicting paths...')
     env = BatchKGEnvironment(args.dataset, args.max_acts, max_path_len=args.max_path_len,
                              state_history=args.state_history)
-    pretrain_sd = torch.load(policy_file, map_location=torch.device('cpu'))
+    pretrain_sd = torch.load(policy_file)
     model = ActorCritic(env.state_dim, env.act_dim, gamma=args.gamma, hidden_sizes=args.hidden).to(args.device)
     model_sd = model.state_dict()
     model_sd.update(pretrain_sd)
@@ -208,26 +183,46 @@ def predict_paths(policy_file, path_file, args):
     predicts = {'paths': all_paths, 'probs': all_probs}
     pickle.dump(predicts, open(path_file, 'wb'))
 
+def save_output(dataset_name, pred_paths):
 
-def evaluate_paths(dataset_name, path_file, train_labels, test_labels, degrees):
+    extracted_path_dir = LOG_DATASET_DIR[dataset_name]#extracted_path_dir + "/pgpr"
+    if not os.path.isdir(extracted_path_dir):
+        os.makedirs(extracted_path_dir)
+
+    print("Normalizing items scores...")
+    # Get min and max score to performe normalization between 0 and 1
+    score_list = []
+    for uid, pid in pred_paths.items():
+        for pid, path_list in pred_paths[uid].items():
+            for path in path_list:
+                score_list.append(float(path[0]))
+    min_score = min(score_list)
+    max_score = max(score_list)
+
+    print("Saving pred_paths...")
+    for uid in pred_paths.keys():
+        curr_pred_paths = pred_paths[uid]
+        for pid in curr_pred_paths.keys():
+            curr_pred_paths_for_pid = curr_pred_paths[pid]
+            for i, curr_path in enumerate(curr_pred_paths_for_pid):
+                path_score = pred_paths[uid][pid][i][0]
+                path_prob = pred_paths[uid][pid][i][1]
+                path = pred_paths[uid][pid][i][2]
+                new_path_score = (float(path_score) - min_score) / (max_score - min_score)
+                pred_paths[uid][pid][i] = (new_path_score, path_prob, path)
+    with open(extracted_path_dir + "/pred_paths.pkl", 'wb') as pred_paths_file:
+        pickle.dump(pred_paths, pred_paths_file)
+    pred_paths_file.close()
+
+def extract_paths(dataset_name, save_paths, path_file, train_labels, valid_labels, test_labels):
     embeds = load_embed(args.dataset)
-    if dataset_name == "ml1m": product = MOVIE 
-    elif dataset_name == "ml100k": product = MOVIE
-    else:  product = SONG
-
     user_embeds = embeds[USER]
-
-    if dataset_name == "ml1m": watched_embeds = embeds[WATCHED][0]
-    elif dataset_name == "ml100k": watched_embeds = embeds[MOVIE][0]
-    else: watched_embeds = embeds[LISTENED][0]
-
-    if dataset_name == "ml1m": movie_embeds = embeds[MOVIE]
-    elif dataset_name == "ml100k": movie_embeds = embeds[MOVIE]
-    else: movie_embeds = embeds[SONG]
-
+    main_entity, main_relation = MAIN_PRODUCT_INTERACTION[dataset_name]
+    product = main_entity
+    watched_embeds = embeds[main_relation][0]
+    movie_embeds = embeds[main_entity]
     scores = np.dot(user_embeds + watched_embeds, movie_embeds.T)
-    uid2gender, _ = get_user2gender(dataset_name)
-    review_uid2kg_uid = get_uid_to_kgid_mapping(dataset_name)
+    validation_pids = get_validation_pids(dataset_name)
     # 1) Get all valid paths for each user, compute path score and path probability.
     results = pickle.load(open(path_file, 'rb'))
     pred_paths = {uid: {} for uid in test_labels}
@@ -239,23 +234,22 @@ def evaluate_paths(dataset_name, path_file, train_labels, test_labels, degrees):
         if uid not in pred_paths:
             continue
         pid = path[-1][2]
+
+        if uid in valid_labels and pid in valid_labels[uid]:
+            continue
+        if pid in train_labels[uid]:
+            continue
         if pid not in pred_paths[uid]:
             pred_paths[uid][pid] = []
         path_score = scores[uid][pid]
         path_prob = reduce(lambda x, y: x * y, probs)
         pred_paths[uid][pid].append((path_score, path_prob, path))
 
-    if not os.path.isdir("../paths/"):
-        os.makedirs("./paths/")
+    if args.save_paths:
+        save_output(dataset_name, pred_paths)
+    return pred_paths, scores
 
-    extracted_path_dir = "../paths/" + args.dataset
-    if not os.path.isdir(extracted_path_dir):
-        os.makedirs(extracted_path_dir)
-    extracted_path_dir = "../paths/" + args.dataset + "/agent_topk=" + '-'.join([str(x) for x in args.topk])
-    if not os.path.isdir(extracted_path_dir):
-        os.makedirs(extracted_path_dir)
-    save_pred_paths(extracted_path_dir, pred_paths, train_labels)
-
+def evaluate_paths(dataset_name, pred_paths, emb_scores, train_labels, test_labels):
     # 2) Pick best path for each user-product pair, also remove pid if it is in train set.
     best_pred_paths = {}
     for uid in pred_paths:
@@ -267,22 +261,18 @@ def evaluate_paths(dataset_name, path_file, train_labels, test_labels, degrees):
         for pid in pred_paths[uid]:
             if pid in train_pids:
                 continue
+            # if pid in validation_pids[uid]:
+            #    continue
             # Get the path with highest probability
-            sorted_path = sorted(pred_paths[uid][pid], key=lambda x: x[0], reverse=True)
+            sorted_path = sorted(pred_paths[uid][pid], key=lambda x: x[1], reverse=True)
             best_pred_paths[uid].append(sorted_path[0])
 
-    #save_best_pred_paths(extracted_path_dir, best_pred_paths)
+    # save_best_pred_paths(extracted_path_dir, best_pred_paths)
 
     # 3) Compute top 10 recommended products for each user.
     sort_by = 'score'
     pred_labels = {}
     pred_paths_top10 = {}
-
-    pred_paths_pattern_names = {}
-    pred_pid_interaction_path_pattern = {}
-    entity_rate_among_total = {}
-    n_of_ptype = {}
-    n_of_ptype_before = {}
 
     for uid in best_pred_paths:
         if sort_by == 'score':
@@ -290,15 +280,12 @@ def evaluate_paths(dataset_name, path_file, train_labels, test_labels, degrees):
         elif sort_by == 'prob':
             sorted_path = sorted(best_pred_paths[uid], key=lambda x: (x[1], x[0]), reverse=True)
         top10_pids = [p[-1][2] for _, _, p in sorted_path[:10]]  # from largest to smallest
-        top10_paths = [p for _, _, p in sorted_path[:10]] #paths for the top10
+        top10_paths = [p for _, _, p in sorted_path[:10]]  # paths for the top10
 
-        top10_path_pattern_names = [p[-1][0] for _, _, p in sorted_path[:10]] #Diversity
-        top10_path_interaction_pid = [p[1][-1] for _,_, p in sorted_path[:10]] #Time relevance
-        path_pattern_names = [p[-1][0] for _, _, p in sorted_path[:10]] #Diversity
         # add up to 10 pids if not enough
         if args.add_products and len(top10_pids) < 10:
             train_pids = set(train_labels[uid])
-            cand_pids = np.argsort(scores[uid])
+            cand_pids = np.argsort(emb_scores[uid])
             for cand_pid in cand_pids[::-1]:
                 if cand_pid in train_pids or cand_pid in top10_pids:
                     continue
@@ -309,58 +296,7 @@ def evaluate_paths(dataset_name, path_file, train_labels, test_labels, degrees):
         pred_labels[uid] = top10_pids[::-1]  # change order to from smallest to largest!
         pred_paths_top10[uid] = top10_paths[::-1]
 
-        pred_paths_pattern_names[uid] = top10_path_pattern_names[::-1]
-        pred_pid_interaction_path_pattern[uid] = top10_path_interaction_pid[::-1]
-        for ptype in pred_paths_pattern_names[uid]:
-            if ptype not in n_of_ptype:
-                n_of_ptype[ptype] = 0
-            n_of_ptype[ptype] += 1
-        for ptype in path_pattern_names:
-            if ptype not in n_of_ptype_before:
-                n_of_ptype_before[ptype] = 0
-            n_of_ptype_before[ptype] += 1
-
-
-    #Save pred_labels and pred_explaination for assesment and reranking
-    save_pred_labels(extracted_path_dir, pred_labels)
-    save_pred_explainations(extracted_path_dir, pred_paths_top10, pred_labels)
-    
-    print("--- Rec quality metrics ---")
-    
     evaluate(dataset_name, pred_labels, test_labels)
-
-
-def get_user_item_path_distribution(pred_paths_per_user, path_pattern_name):  # redo
-    n_item_with_same_path_pattern = 0
-    total_item = 0
-    for path_to_item in pred_paths_per_user.items():
-        for path in path_to_item[1]:
-            total_item += 1
-            if path_pattern_name == get_path_pattern(path):
-                n_item_with_same_path_pattern += 1
-    return n_item_with_same_path_pattern / total_item
-
-
-# Simpson index of diversity range 0-1 with 1 max diversity and 0 no diversity at all
-def simpson_index_of_diversity(pid, pred_uv_paths):
-    n_path_for_patterns = {}
-    N = 0
-    for path in pred_uv_paths[pid]:
-        path_patter_value = get_path_pattern(path)
-        if path_patter_value not in n_path_for_patterns:
-            n_path_for_patterns[path_patter_value] = 0
-        n_path_for_patterns[path_patter_value] += 1
-        N += 1
-    numerator = 0
-    for path_type, n_path_type_ith in n_path_for_patterns.items():
-        numerator += n_path_type_ith * (n_path_type_ith - 1)
-
-    # N = 0
-    # for item_path in pred_uv_paths.items():
-    #    N += len(item_path[1])
-    if N * (N - 1) == 0:
-        return 0
-    return 1 - (numerator / (N * (N - 1)))
 
 
 # In formula w of pi log(2 + (number of patterns of same pattern type among uv paths / total number of paths among uv paths))
@@ -375,15 +311,19 @@ def get_path_pattern_weigth(path_pattern_name, pred_uv_paths):
 
 def test(args):
     policy_file = args.log_dir + '/policy_model_epoch_{}.ckpt'.format(args.epochs)
+    
     path_file = args.log_dir + '/policy_paths_epoch{}.pkl'.format(args.epochs)
 
     train_labels = load_labels(args.dataset, 'train')
+    valid_labels = load_labels(args.dataset, 'valid')
     test_labels = load_labels(args.dataset, 'test')
-    kg = load_kg(args.dataset)
+    # kg = load_kg(args.dataset)
     if args.run_path:
         predict_paths(policy_file, path_file, args)
+    if args.save_paths or args.run_eval:
+        pred_paths, scores = extract_paths(args.dataset, args.save_paths, path_file, train_labels, valid_labels, test_labels)
     if args.run_eval:
-        evaluate_paths(args.dataset, path_file, train_labels, test_labels, kg.degrees)
+        evaluate_paths(args.dataset, pred_paths, scores, train_labels, test_labels)
 
 
 if __name__ == '__main__':
@@ -399,15 +339,15 @@ if __name__ == '__main__':
     parser.add_argument('--gamma', type=float, default=0.99, help='reward discount factor.')
     parser.add_argument('--state_history', type=int, default=1, help='state history length')
     parser.add_argument('--hidden', type=int, nargs='*', default=[512, 256], help='number of samples')
-    parser.add_argument('--add_products', type=boolean, default=False, help='Add predicted products up to 10')
-    parser.add_argument('--topk', type=list, nargs='*', default=[25,50,1], help='number of samples')
+    parser.add_argument('--add_products', type=boolean, default=True, help='Add predicted products up to 10')
+    parser.add_argument('--topk', type=list, nargs='*', default=[25, 5, 1], help='number of samples')
     parser.add_argument('--run_path', type=boolean, default=True, help='Generate predicted path? (takes long time)')
     parser.add_argument('--run_eval', type=boolean, default=True, help='Run evaluation?')
+    parser.add_argument('--save_paths', type=boolean, default=True, help='Save paths')
     args = parser.parse_args()
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     args.device = torch.device('cuda:0') if torch.cuda.is_available() else 'cpu'
 
-    args.log_dir = TMP_DIR[args.dataset] + '/' + args.name
+    args.log_dir = os.path.join(TMP_DIR[args.dataset], args.name)
     test(args)
-

@@ -5,7 +5,7 @@ from models.PGPR.utils import get_tail_entity_name, LASTFM_RELATION_NAME
 from myutils import *
 
 #Generate the mapping from the KG Completation of KGAT completion to a PGPR readable dataset
-class LastFmDatasetMapper(object):
+class ML100kDatasetMapper(object):
     def __init__(self, args):
         self.args = args
         self.generate_train_test_split()
@@ -18,14 +18,14 @@ class LastFmDatasetMapper(object):
         uid_review_tuples = {}
         dataset_size = 0
         print("Loading reviews...")
-        with open(DATASET_DIR[dataset_name] + "/ratings.dat", 'r', encoding='latin-1') as reviews_file:
-            reader = csv.reader(reviews_file, delimiter=',')
+        with open(DATASET_DIR[dataset_name] + "/u.data", 'r', encoding='latin-1') as reviews_file:
+            reader = csv.reader(reviews_file, delimiter='\t')
             next(reader, None)
             for row in reader:
                 uid = int(row[0])
                 if uid not in uid_review_tuples:
                     uid_review_tuples[uid] = []
-                uid_review_tuples[uid].append((row[0], row[3], row[4]))
+                uid_review_tuples[uid].append((row[0], row[1], row[2], row[3]))
                 dataset_size += 1
         reviews_file.close()
         train_size = 0.8
@@ -77,14 +77,13 @@ class LastFmDatasetMapper(object):
             product = 'song'
         no_of_movies = len(mappings[product])+1
         movie_id_entity = edict(
-            sang_by=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/sang_by_s_a.txt'),
-            featured_by = ([[] for _ in range(no_of_movies)],DATASET_DIR[dataset_name] + '/relations/featured_by_s_a.txt'),
-            belong_to = ([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/belong_to_s_ca.txt'),
-            mixed_by = ([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/mixed_by_s_e.txt'),
-            related_to = ([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/related_to_s_rs.txt'),
-            alternative_version_of = ([[] for _ in range(no_of_movies)],DATASET_DIR[dataset_name] + '/relations/alternative_version_of_s_rs.txt'),
-            original_version_of = ([[] for _ in range(no_of_movies)],DATASET_DIR[dataset_name] + '/relations/orginal_version_of_s_rs.txt'),
-            produced_by_producer=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/produced_by_producer_s_pr.txt'),
+            producer=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/produced_by_producer_m_pr.txt'),
+            writer=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/wrote_by_m_w.txt'),
+            cinematographer=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/cinematography_m_ci.txt'),
+            category=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/belong_to_m_ca.txt'), 
+            director=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/directed_by_m_d.txt'),
+            actor=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/starring_m_a.txt'),
+            distributor=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/distributor_m_dis.txt'),
         )
         relations_path = DATASET_DIR[dataset_name] + "/relations/"
         if not os.path.isdir(relations_path):
@@ -127,25 +126,26 @@ class LastFmDatasetMapper(object):
         dataset_name = self.args.dataset
         uid_attributes = {}
         #user_id, country, age, gender, playcount, registered_unixtime
-        with open(DATASET_DIR[dataset_name] + "/users.dat", 'r') as file:
-            csv_reader = csv.reader(file, delimiter=',')
+        with open(DATASET_DIR[dataset_name] + "/u.user", 'r') as file:
+            csv_reader = csv.reader(file, delimiter='|')
             next(csv_reader, None)
             for row in csv_reader:
+
                 uid = row[0]
-                country = row[1]
-                age = row[2]
-                gender = row[3]
-                uid_attributes[uid] = [country, age, gender]
+                age = row[1]
+                gender = row[2]
+                occupation = row[3]
+                uid_attributes[uid] = [gender, age, occupation]
         file.close()
 
         if not os.path.exists(DATASET_DIR[dataset_name] + "/mappings/"):
             os.makedirs(DATASET_DIR[dataset_name] + "/mappings/")
 
         # Write user_occupation mapping
-        with open(DATASET_DIR[dataset_name] + "/mappings/uid2country.txt", 'w+') as file:
+        with open(DATASET_DIR[dataset_name] + "/mappings/uid2occupation.txt", 'w+') as file:
             for uid, attributes in uid_attributes.items():
-                country = attributes[0]
-                file.write(uid + "\t" + country + "\n")
+                occupation = attributes[2]
+                file.write(uid + "\t" + occupation + "\n")
         file.close()
 
         # Write user_age mapping
@@ -173,7 +173,7 @@ class LastFmDatasetMapper(object):
         #Write user_gender mapping
         with open(DATASET_DIR[dataset_name] + "/mappings/uid2gender.txt", 'w+') as file:
             for uid, attributes in uid_attributes.items():
-                gender = attributes[2]
+                gender = attributes[0]
                 file.write(uid + "\t" + gender + "\n")
         file.close()
     def get_valid_users(self, args):
@@ -192,24 +192,25 @@ class LastFmDatasetMapper(object):
         #Creates a dict of sets to store all the extracted entitities for every differnt type
         kg_entities = edict(
             user=(set(), 'user.txt'),
-            song=(set(), 'song.txt'),
-            artist=(set(), 'artist.txt'),
-            engineer=(set(), 'engineer.txt'),
+            movie=(set(), 'movie.txt'),
             producer=(set(), 'producer.txt'),
+            distributor=(set(), 'distributor.txt'),
+            cinematographer=(set(), 'cinematographer.txt'),
             category=(set(), 'category.txt'),
-            related_song=(set(), 'related_song.txt'),
+            actor=(set(), 'actor.txt'),
+            director=(set(), 'director.txt')
         )
         entity_path = DATASET_DIR[dataset_name] + "/entities/"
         if not os.path.isdir(entity_path):
             os.makedirs(entity_path)
 
-        lastid2name = {}
-        with open(DATASET_DIR[dataset_name] + "/tracks.txt") as file:
-            reader = csv.reader(file, delimiter=",")
+        mlid2name = {}
+        with open(DATASET_DIR[dataset_name] + "/u.item") as file:
+            reader = csv.reader(file, delimiter="|")
             next(reader, None)
             for row in reader:
-                track_id = int(row[0])
-                lastid2name[track_id] = row[1]
+                ml_id = int(row[0])
+                mlid2name[ml_id] = row[1]
         file.close()
 
         file = open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/item_list.txt", "r")
@@ -322,7 +323,40 @@ class LastFmDatasetMapper(object):
             # Zip entities
             zip_file(filename)
 
-
+def unify_dataset(args):
+    dataset_name = args.dataset
+    selected_relationship = SELECTED_RELATIONS[dataset_name]
+    print("Unifying dataset from joint-kg Knowledge graph completation for {}...".format(dataset_name))
+    with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/dataset.dat", 'w+', newline='\n') as dataset_file:
+        print("Loading joint-kg train...")
+        with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/kg/train.dat") as joint_kg_train:
+            csv_reader = csv.reader(joint_kg_train, delimiter='\t')
+            for row in csv_reader:
+                relation = int(row[2])
+                if relation not in selected_relationship: continue
+                dataset_file.writelines('\t'.join(row))
+                dataset_file.write("\n")
+        joint_kg_train.close()
+        print("Loading joint-kg valid...")
+        with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/kg/valid.dat") as joint_kg_valid:
+            csv_reader = csv.reader(joint_kg_valid, delimiter='\t')
+            for row in csv_reader:
+                relation = int(row[2])
+                if relation not in selected_relationship: continue
+                dataset_file.writelines('\t'.join(row))
+                dataset_file.write("\n")
+        joint_kg_valid.close()
+        print("Loading joint-kg test...")
+        with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/kg/test.dat") as joint_kg_test:
+            csv_reader = csv.reader(joint_kg_test, delimiter='\t')
+            for row in csv_reader:
+                relation = int(row[2])
+                if relation not in selected_relationship: continue
+                dataset_file.writelines('\t'.join(row))
+                dataset_file.write("\n")
+        joint_kg_test.close()
+        print("Unifying dataset from joint-kg Knowledge graph completation... DONE")
+    dataset_file.close()
 
 #Generate the mapping from the KG Completation of Joint-KG to a PGPR readable dataset
 class ML1MDatasetMapper(object):
@@ -336,25 +370,27 @@ class ML1MDatasetMapper(object):
 
     def generate_dbpid_mlpid_mapping(self):
         dataset_name = self.args.dataset
-        file = open(DATASET_DIR[dataset_name] + "/joint-kg/i2kg_map.tsv", "r")
+        file = open(DATASET_DIR[dataset_name] + "/i2kg_map.txt", "r")
         dburl_to_mlid = {}
         reader = csv.reader(file, delimiter="\t")
+        header = next(reader)
         for row in reader:
-            mlid = int(row[0])
-            name = row[1]
-            dburl = row[2]
+            mlid = int(row[1])
+            name = row[2]
+            dburl = row[3]
             dburl_to_mlid[dburl] = [mlid, name]
         file.close()
 
-        file = open(DATASET_DIR[dataset_name] + "/joint-kg/kg/e_map.dat", "r", encoding='latin-1')
+        file = open(DATASET_DIR[dataset_name] + "/e_map.txt", "r", encoding='latin-1')
         fileo = open(DATASET_DIR[dataset_name] + "/mappings/product_mappings.txt", "w+")
         writer = csv.writer(fileo, delimiter="\t")
         header = ["mlid", "dbid", "name", "dburl"]
         writer.writerow(header)
         reader = csv.reader(file, delimiter="\t")
+        header = next(reader)
         for row in reader:
             dbid = int(row[0])
-            dburl = row[1]
+            dburl = row[2]
             if dburl not in dburl_to_mlid: continue
             mlid = dburl_to_mlid[dburl][0]
             name = dburl_to_mlid[dburl][1]
@@ -368,10 +404,10 @@ class ML1MDatasetMapper(object):
         dataset_size = 0
         valid_movies = get_valid_movies(dataset_name)
         print("Loading reviews...")
-        with open(DATASET_DIR[dataset_name] + "/ratings.dat", 'r', encoding='latin-1') as reviews_file:
+        with open(DATASET_DIR[dataset_name] + "/u.data", 'r', encoding='latin-1') as reviews_file:
             reader = csv.reader(reviews_file, delimiter='\n')
             for row in reader:
-                row = ''.join(row).strip().split("::")
+                row = ''.join(row).strip().split("\t")
                 if int(row[1]) not in valid_movies: continue
                 if row[0] not in uid_review_tuples:
                     uid_review_tuples[row[0]] = []
@@ -425,13 +461,13 @@ class ML1MDatasetMapper(object):
         genders = []
         ages = []
         occupations = []
-        with open(DATASET_DIR[dataset_name] + "/users.dat", 'r') as file:
+        with open(DATASET_DIR[dataset_name] + "/u.user", 'r') as file:
             csv_reader = csv.reader(file, delimiter='\n')
             for row in csv_reader:
-                attributes = row[0].strip().split('::')
+                attributes = row[0].strip().split('|')
                 users_id.append(attributes[0])
-                genders.append(attributes[1])
-                ages.append(attributes[2])
+                genders.append(attributes[2])
+                ages.append(attributes[1])
                 occupations.append(attributes[3])
         file.close()
 
@@ -457,17 +493,15 @@ class ML1MDatasetMapper(object):
         dataset_name = self.args.dataset
         #Creates a dict of sets to store all the extracted entitities for every differnt type
         kg_entities = edict(
-            user=list((set(), 'user.txt')),
-            movie=list((set(), 'movie.txt')),
-            actor=list((set(), 'actor.txt')),
-            director=list((set(), 'director.txt')),
-            producer=list((set(), 'producer.txt')),
-            production_company=list((set(), 'production_company.txt')),
-            category=list((set(), 'category.txt')),
-            editor=list((set(), 'editor.txt')),
-            writer=list((set(), 'writer.txt')),
-            cinematographer=list((set(), 'cinematographer.txt')),
-            composer=list((set(), 'composer.txt')),
+            user=[set(), 'user.txt'],
+            movie=[set(), 'movie.txt'],
+            producer=[set(), 'producer.txt'],
+            distributor=[set(), 'distributor.txt'],
+            writer=(set(), 'writer.txt'),
+            cinematographer=[set(), 'cinematographer.txt'],
+            category=[set(), 'category.txt'],
+            actor=[set(), 'actor.txt'],
+            director=[set(), 'director.txt']
         )
         entity_path = DATASET_DIR[dataset_name] + "/entities/"
         if not os.path.isdir(entity_path):
@@ -486,12 +520,14 @@ class ML1MDatasetMapper(object):
             ml_pid2metada[int(row[0])] = [row[2], row[3]]
         file.close()
         kg_entities['movie'][0] = set(ml_pid2db_pid.keys())
-        with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/dataset.dat", 'r') as file:
+
+        with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/kg_final.txt", 'r') as file:
             csv_reader = csv.reader(file, delimiter='\t')
+            next(csv_reader, None)
             for row in csv_reader:
                 head = int(row[0])
-                tail = row[1]
-                relation = int(row[2])
+                tail = row[2]
+                relation = int(row[1])
                 if head not in db_pid2ml_pid: continue
 
                 #movie_id = db_pid2ml_pid[head]
@@ -502,10 +538,10 @@ class ML1MDatasetMapper(object):
         file.close()
 
         # Write user entity
-        with open(DATASET_DIR[dataset_name] + "/users.dat", 'r') as file:
+        with open(DATASET_DIR[dataset_name] + "/u.user", 'r') as file:
             csv_reader = csv.reader(file, delimiter='\n')
             for row in csv_reader:
-                row = row[0].strip().split('::')
+                row = row[0].strip().split('|')
                 uid = int(row[0])
                 kg_entities.user[0].add(uid)
 
@@ -547,11 +583,12 @@ class ML1MDatasetMapper(object):
 
         #Retrive the dblink associated to the entity id in the kg completion
         entity_id2dblink = {}
-        entity_file = open(DATASET_DIR[dataset_name] + "/joint-kg/kg/e_map.dat", "r", encoding='latin-1')
+        entity_file = open(DATASET_DIR[dataset_name] + "/e_map.txt", "r", encoding='latin-1')
         reader = csv.reader(entity_file, delimiter="\t")
+        next(reader, None)
         for row in reader:
             eid = int(row[0])
-            dblink = row[1]
+            dblink = row[2]
             entity_id2dblink[eid] = dblink
 
         #Populating other entities
@@ -584,23 +621,22 @@ class ML1MDatasetMapper(object):
 
         no_of_movies = len(mappings['movie'])+1
         movie_id_entity = edict(
-            production_company=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/produced_by_company_m_pc.txt'),
-            composer=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/composed_by_m_c.txt'),
-            category=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/belong_to_m_ca.txt'),
-            director=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/directed_by_m_d.txt'),
-            actor=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/starring_m_a.txt'),
-            cinematographer=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/cinematography_m_ci.txt'),
-            editor=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/edited_by_m_ed.txt'),
             producer=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/produced_by_producer_m_pr.txt'),
+            distributor=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/distributor_m_dis.txt'),
             writer=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/wrote_by_m_w.txt'),
+            cinematographer=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/cinematography_m_ci.txt'),
+            category=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/belong_to_m_ca.txt'),
+            actor=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/starring_m_a.txt'),
+            director=([[] for _ in range(no_of_movies)], DATASET_DIR[dataset_name] + '/relations/directed_by_m_d.txt'),
         )
         relations_path = DATASET_DIR[dataset_name] + "/relations/"
         if not os.path.isdir(relations_path):
             os.makedirs(relations_path)
         invalid = 0
         print("Inserting relations inside buckets...\n")
-        with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + '/dataset.dat', 'r') as file:
+        with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + '/kg_final.txt', 'r') as file:
             csv_reader = csv.reader(file, delimiter='\n')
+            next(csv_reader, None)
             for row in csv_reader:
                 row = row[0].strip().split("\t")
                 db_pid = int(row[0])
@@ -608,8 +644,8 @@ class ML1MDatasetMapper(object):
                     invalid += 1
                     continue
                 head = mappings['movie'][db_pid][0] #id of the movie in the kg
-                tail = int(row[1])
-                relation = int(row[2])
+                tail = int(row[2])
+                relation = int(row[1])
 
                 if relation not in SELECTED_RELATIONS[dataset_name]:
                     invalid += 1
@@ -619,6 +655,10 @@ class ML1MDatasetMapper(object):
                     invalid += 1
                     continue
                 kg_id_tail = mappings[tail_entity_name][tail]
+                # print(kg_id_tail)
+                # print(tail_entity_name)
+                # print(head)
+                # print(movie_id_entity)
                 movie_id_entity[tail_entity_name][0][head].append(kg_id_tail)
         file.close()
 
@@ -639,7 +679,7 @@ def unify_dataset(args):
     dataset_name = args.dataset
     selected_relationship = SELECTED_RELATIONS[dataset_name]
     print("Unifying dataset from joint-kg Knowledge graph completation for {}...".format(dataset_name))
-    with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/dataset.dat", 'w+', newline='\n') as dataset_file:
+    with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/kg_final.txt", 'w+', newline='\n') as dataset_file:
         print("Loading joint-kg train...")
         with open(KG_COMPLETATION_DATASET_DIR[dataset_name] + "/kg/train.dat") as joint_kg_train:
             csv_reader = csv.reader(joint_kg_train, delimiter='\t')
@@ -670,16 +710,20 @@ def unify_dataset(args):
         print("Unifying dataset from joint-kg Knowledge graph completation... DONE")
     dataset_file.close()
 
+
 if __name__ == '__main__':
     boolean = lambda x: (str(x).lower() == 'true')
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default=ML1M, help='One of {ML1M, LASTFM}')
+    parser.add_argument('--dataset', type=str, default=ML100K, help='One of {ML1M, LASTFM}')
     args = parser.parse_args()
 
     #unify_dataset(args)
-    if args.dataset == ML1M:
+    # if args.dataset == ML1M:
+    #     ML1MDatasetMapper(args)
+    # elif args.dataset == LASTFM:
+    #     LastFmDatasetMapper(args)
+    if args.dataset == ML100K:
         ML1MDatasetMapper(args)
-    elif args.dataset == LASTFM:
-        LastFmDatasetMapper(args)
+        # ML100kDatasetMapper(args)
     else:
         print("Invalid dataset string, chose one between [ml1m, lastfm]")
