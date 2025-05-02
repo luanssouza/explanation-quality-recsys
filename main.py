@@ -5,7 +5,73 @@ from metrics import *
 from optimizations import *
 
 from path_data_loader import PathDataLoader
+from models.PGPR.extract_predicted_paths import save_pred_paths, save_pred_labels, save_pred_explainations
 
+def preare_path(args, pred_paths):
+    # 2) Pick best path for each user-product pair, also remove pid if it is in train set.
+    best_pred_paths = {}
+    for uid in pred_paths:
+        if uid in train_labels:
+            train_pids = set(train_labels[uid])
+        else:
+            print("Invalid train_pids")
+        best_pred_paths[uid] = []
+        for pid in pred_paths[uid]:
+            if pid in train_pids:
+                continue
+            # Get the path with highest probability
+            sorted_path = sorted(pred_paths[uid][pid], key=lambda x: x[0], reverse=True)
+            best_pred_paths[uid].append(sorted_path[0])
+
+    #save_best_pred_paths(extracted_path_dir, best_pred_paths)
+
+    # 3) Compute top 10 recommended products for each users
+    sort_by = 'score'
+    pred_labels = {}
+    pred_paths_top10 = {}
+
+    pred_paths_pattern_names = {}
+    pred_pid_interaction_path_pattern = {}
+    n_of_ptype = {}
+    n_of_ptype_before = {}
+
+    for uid in best_pred_paths:
+        if sort_by == 'score':
+            sorted_path = sorted(best_pred_paths[uid], key=lambda x: (x[0], x[1]), reverse=True)
+        elif sort_by == 'prob':
+            sorted_path = sorted(best_pred_paths[uid], key=lambda x: (x[1], x[0]), reverse=True)
+        top10_pids = [p[-1][2] for _, _, p in sorted_path[:10]]  # from largest to smallest
+        top10_paths = [p for _, _, p in sorted_path[:10]] #paths for the top10
+
+        top10_path_pattern_names = [p[-1][0] for _, _, p in sorted_path[:10]] #Diversity
+        top10_path_interaction_pid = [p[1][-1] for _,_, p in sorted_path[:10]] #Time relevance
+        path_pattern_names = [p[-1][0] for _, _, p in sorted_path[:10]] #Diversity
+        # add up to 10 pids if not enough
+        # if args.add_products and len(top10_pids) < 10:
+        #     train_pids = set(train_labels[uid])
+        #     print(pred_paths[uid])
+        #     cand_pids = np.argsort([pred_paths[uid]])
+        #     for cand_pid in cand_pids[::-1]:
+        #         if cand_pid in train_pids or cand_pid in top10_pids:
+        #             continue
+        #         top10_pids.append(cand_pid)
+        #         if len(top10_pids) >= 10:
+        #             break
+        # end of add
+        pred_labels[uid] = top10_pids[::-1]  # change order to from smallest to largest!
+        pred_paths_top10[uid] = top10_paths[::-1]
+
+        pred_paths_pattern_names[uid] = top10_path_pattern_names[::-1]
+        pred_pid_interaction_path_pattern[uid] = top10_path_interaction_pid[::-1]
+        for ptype in pred_paths_pattern_names[uid]:
+            if ptype not in n_of_ptype:
+                n_of_ptype[ptype] = 0
+            n_of_ptype[ptype] += 1
+        for ptype in path_pattern_names:
+            if ptype not in n_of_ptype_before:
+                n_of_ptype_before[ptype] = 0
+            n_of_ptype_before[ptype] += 1
+    return pred_labels, pred_paths_top10
 if __name__ == '__main__':
     boolean = lambda x: (str(x).lower() == 'true')
     parser = argparse.ArgumentParser()
@@ -14,7 +80,7 @@ if __name__ == '__main__':
     parser.add_argument('--opt', type=str, default="LIRopt", help='One of ["softETD", "softSEP", "softLIR", "ETDopt", "SEPopt", "LIRopt", "ETD_SEP_opt", "ETD_LIR_opt", "SEP_LIR_opt", "ETD_SEP_LIR_opt"]')
     parser.add_argument('--alpha', type=float, default=-1, help="Determine the weigth of the optimized explanation metric/s in reranking, -1 means test all alpha from 0. to 1. at step of 0.05")
     parser.add_argument('--eval_baseline', type=bool, default=False, help='If True compute rec quality metrics and explanation quality metrics from the extracted paths')
-    parser.add_argument('--log_enabled', type=bool, default=True, help='If true save log files instead of printing results')
+    parser.add_argument('--log_enabled', type=boolean, default=True, help='If true save log files instead of printing results')
     parser.add_argument('--save_baseline_rec_quality_avgs', type=bool, default=True, help='If true save a csv with the average baseline values for rec metrics and groups')
     parser.add_argument('--save_baseline_exp_quality_avgs', type=bool, default=True, help='If true save a csv with the average baseline values for exp metrics and groups')
     parser.add_argument('--save_baseline_rec_quality_distributions', type=bool, default=True, help='If true save a csv with the distribution of baseline values for the rec metrics and groups')
@@ -24,6 +90,8 @@ if __name__ == '__main__':
     parser.add_argument('--save_after_rec_quality_distributions', type=bool, default=True, help='If true save a csv with the distribution of after-opt values for the rec metrics and groups')
     parser.add_argument('--save_after_exp_quality_distributions', type=bool, default=True, help='If true save a csv with the distribution of after-opt values for the exp metrics and groups')
     parser.add_argument('--save_overall', type=bool, default=True, help='If true saves the avgs and distribution also for the overall group')
+
+    parser.add_argument('--topk', type=list, nargs='*', default=[25,50,1], help='number of samples')
     args = parser.parse_args()
 
     sys.path.append(r'models/PGPR')
@@ -195,8 +263,8 @@ if __name__ == '__main__':
     #Performing Soft-Optimization
 
     if chosen_optimization in soft_optimizations:
-
-
+        
+        train_labels = load_labels(args.dataset, 'train')
         for optimization in soft_optimizations:
             if args.log_enabled == True:
                 log_path = log_base_path + chosen_optimization + ".txt"
@@ -216,6 +284,19 @@ if __name__ == '__main__':
             ETD_after = avg_ETD(path_data)
             rec_metrics_after = measure_rec_quality(path_data)
             print_rec_metrics(path_data.dataset_name,rec_metrics_after)
+
+            extracted_path_dir = "./paths/" + args.dataset
+            if not os.path.isdir(extracted_path_dir):
+                os.makedirs(extracted_path_dir)
+            extracted_path_dir = "./paths/" + args.dataset + "/agent_topk_rerank=" + '-'.join([str(x) for x in args.topk])
+            if not os.path.isdir(extracted_path_dir):
+                os.makedirs(extracted_path_dir)
+            
+            save_pred_paths(extracted_path_dir, path_data.pred_paths, train_labels)
+
+            pred_labels, pred_paths_top10 = preare_path(args, path_data.pred_paths)
+            save_pred_labels(extracted_path_dir, pred_labels)
+            save_pred_explainations(extracted_path_dir, pred_paths_top10, pred_labels)
 
             avg_exp_metrics_after = {}
             distributions_exp_metrics_after = {}
