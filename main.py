@@ -7,14 +7,15 @@ from optimizations import *
 from path_data_loader import PathDataLoader
 from models.PGPR.extract_predicted_paths import save_pred_paths, save_pred_explainations#, save_pred_labels
 
-def save_pred_labels(folder_path, uid_topk):
+def save_pred_labels(folder_path, labels_topk):
+    print(labels_topk)
     print("Saving topks...")
     with open(folder_path +  "/uid_topk.csv", 'w+', newline='') as uid_topk:
         header = ["uid", "top10"]
         writer = csv.writer(uid_topk)
         writer.writerow(header)
-        for uid, topk in pred_labels.items():
-            writer.writerow([uid, ' '.join(topk)])
+        for uid, topk in labels_topk.items():
+            writer.writerow([uid, ' '.join([str(p) for p in topk])])
     uid_topk.close()
 
 def explanation_to_pred_path(uid_pid_explaination):
