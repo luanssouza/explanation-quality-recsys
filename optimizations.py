@@ -30,8 +30,6 @@ def soft_optimization_SEP(path_data):
             pred_path[uid][pid].sort(key=lambda x: SEP_single(path_data, x[-1]), reverse=True)
             path_data.uid_pid_explaination[uid][pid] = pred_path[uid][pid][0][-1]
 
-
-
 def soft_optimization_ETD(path_data):
     pred_path = path_data.pred_paths
     for uid, topk in path_data.uid_topk.items():
@@ -57,6 +55,7 @@ def optimize_LIR(path_data, alpha):
 
     #Pred_paths {uid: {pid: [[path_score, path_prob_path], ..., [path_score, path_prob_path]], ...,
     # pidn: [[path_score, path_prob_path], ..., [path_score, path_prob_path]]]}, ..., uidn: {pid: ...}}
+    new_paths = {}
     for uid, pid_list in pred_path.items():
         candidates = []
         best_candidates = []
@@ -84,11 +83,14 @@ def optimize_LIR(path_data, alpha):
         # Update the topk with the reranked one
         path_data.uid_topk[uid] = [get_rec_pid(candidate) for candidate in best_candidates]
         path_data.uid_pid_explaination[uid] = {get_rec_pid(candidate): candidate[-1] for candidate in best_candidates}
+        new_paths[uid] = {get_rec_pid(candidate): [candidate] for candidate in best_candidates}
+    return new_paths
 
 #SEP Alpha optimization
 def optimize_SEP(path_data, alpha):
     pred_paths = path_data.pred_paths
 
+    new_paths = {}
     for uid, pid_list in pred_paths.items():
         candidates = []
         best_candidates = []
@@ -117,10 +119,13 @@ def optimize_SEP(path_data, alpha):
         # Update the topk with the reranked one
         path_data.uid_topk[uid] = [get_rec_pid(candidate) for candidate in best_candidates]
         path_data.uid_pid_explaination[uid] = {get_rec_pid(candidate): candidate[-1] for candidate in best_candidates}
+        new_paths[uid] = {get_rec_pid(candidate): [candidate] for candidate in best_candidates}
+    return new_paths
 
 #ETD Alpha optimization
 def optimize_ETD(path_data, alpha):
     pred_path = path_data.pred_paths
+    new_paths = {}
     for uid, pid_list in pred_path.items():
         candidates = []
         best_candidates = []
@@ -181,11 +186,14 @@ def optimize_ETD(path_data, alpha):
         # Update the topk with the reranked one
         path_data.uid_topk[uid] = [get_rec_pid(candidate) for candidate in best_candidates]
         path_data.uid_pid_explaination[uid] = {get_rec_pid(candidate): candidate[-1] for candidate in best_candidates}
+        new_paths[uid] = {get_rec_pid(candidate): [candidate] for candidate in best_candidates}
+    return new_paths
 
 #LIR+SEP Optimization
 def optimize_LIR_SEP(path_data, alpha):
     pred_path = path_data.pred_paths
 
+    new_paths = {}
     for uid, pid_list in pred_path.items():
         candidates = []
         best_candidates = []
@@ -221,9 +229,13 @@ def optimize_LIR_SEP(path_data, alpha):
         # Update the topk with the reranked one
         path_data.uid_topk[uid] = [get_rec_pid(candidate) for candidate in best_candidates]
         path_data.uid_pid_explaination[uid] = {get_rec_pid(candidate): candidate[-1] for candidate in best_candidates}
+        new_paths[uid] = {get_rec_pid(candidate): [candidate] for candidate in best_candidates}
+    return new_paths
 
 def optimize_ETD_LIR(path_data, alpha):
     pred_path = path_data.pred_paths
+
+    new_paths = {}
     for uid, pid_list in pred_path.items():
         candidates = []
         best_candidates = []
@@ -281,10 +293,14 @@ def optimize_ETD_LIR(path_data, alpha):
         # Update the topk with the reranked one
         path_data.uid_topk[uid] = [get_rec_pid(candidate) for candidate in best_candidates]
         path_data.uid_pid_explaination[uid] = {get_rec_pid(candidate): candidate[-1] for candidate in best_candidates}
+        new_paths[uid] = {get_rec_pid(candidate): [candidate] for candidate in best_candidates}
+    return new_paths
 
 #ETD+SEP Alpha optimization
 def optimize_ETD_SEP(path_data, alpha):
     pred_path = path_data.pred_paths
+
+    new_paths = {}
     for uid, pid_list in pred_path.items():
         candidates = []
         best_candidates = []
@@ -343,10 +359,14 @@ def optimize_ETD_SEP(path_data, alpha):
         # Update the topk with the reranked one
         path_data.uid_topk[uid] = [get_rec_pid(candidate) for candidate in best_candidates]
         path_data.uid_pid_explaination[uid] = {get_rec_pid(candidate): candidate[-1] for candidate in best_candidates}
+        new_paths[uid] = {get_rec_pid(candidate): [candidate] for candidate in best_candidates}
+    return new_paths
 
 #ETD+SEP+LIR Alpha optimization
 def optimize_ETD_SEP_LIR(path_data, alpha):
     pred_path = path_data.pred_paths
+
+    new_paths = {}
     for uid, pid_list in pred_path.items():
         candidates = []
         best_candidates = []
@@ -406,4 +426,6 @@ def optimize_ETD_SEP_LIR(path_data, alpha):
         # Update the topk with the reranked one
         path_data.uid_topk[uid] = [get_rec_pid(candidate) for candidate in best_candidates]
         path_data.uid_pid_explaination[uid] = {get_rec_pid(candidate): candidate[-1] for candidate in best_candidates}
+        new_paths[uid] = {get_rec_pid(candidate): [candidate] for candidate in best_candidates}
+    return new_paths
 

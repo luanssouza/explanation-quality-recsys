@@ -5,7 +5,26 @@ from metrics import *
 from optimizations import *
 
 from path_data_loader import PathDataLoader
-from models.PGPR.extract_predicted_paths import save_pred_paths, save_pred_labels, save_pred_explainations
+from models.PGPR.extract_predicted_paths import save_pred_paths, save_pred_explainations#, save_pred_labels
+
+def save_pred_labels(folder_path, uid_topk):
+    print("Saving topks...")
+    with open(folder_path +  "/uid_topk.csv", 'w+', newline='') as uid_topk:
+        header = ["uid", "top10"]
+        writer = csv.writer(uid_topk)
+        writer.writerow(header)
+        for uid, topk in pred_labels.items():
+            writer.writerow([uid, ' '.join(topk)])
+    uid_topk.close()
+
+def explanation_to_pred_path(uid_pid_explaination):
+    opt_pred_paths_top10 = {}
+    for k, v in uid_pid_explaination.items():
+        p_list = []
+        for _, p in v.items():
+            p_list.append(p)
+        opt_pred_paths_top10[k] = p_list
+    return opt_pred_paths_top10
 
 def preare_path(args, pred_paths):
     # 2) Pick best path for each user-product pair, also remove pid if it is in train set.
@@ -265,190 +284,209 @@ if __name__ == '__main__':
     if chosen_optimization in soft_optimizations:
         
         train_labels = load_labels(args.dataset, 'train')
-        for optimization in soft_optimizations:
-            if args.log_enabled == True:
-                log_path = log_base_path + chosen_optimization + ".txt"
-                log_file = open(log_path, "w+")
-                sys.stdout = log_file
-            print("Performing Soft-Optimization...")
-            chosen_optimization = optimization
-            if chosen_optimization == "softETD":
-                soft_optimization_ETD(path_data)
-            elif chosen_optimization == "softSEP":
-                soft_optimization_SEP(path_data)
-            elif chosen_optimization == "softLIR":
-                soft_optimization_LIR(path_data)
+        # for optimization in soft_optimizations:
+        if args.log_enabled == True:
+            log_path = log_base_path + chosen_optimization + ".txt"
+            log_file = open(log_path, "w+")
+            sys.stdout = log_file
+        print("Performing Soft-Optimization...")
+        # chosen_optimization = optimization
+        if chosen_optimization == "softETD":
+            soft_optimization_ETD(path_data)
+        elif chosen_optimization == "softSEP":
+            soft_optimization_SEP(path_data)
+        elif chosen_optimization == "softLIR":
+            soft_optimization_LIR(path_data)
 
-            LIR_after = avg_LIR(path_data)
-            SEP_after = avg_SEP(path_data)
-            ETD_after = avg_ETD(path_data)
+        LIR_after = avg_LIR(path_data)
+        SEP_after = avg_SEP(path_data)
+        ETD_after = avg_ETD(path_data)
+        rec_metrics_after = measure_rec_quality(path_data)
+        print_rec_metrics(path_data.dataset_name,rec_metrics_after)
+
+        extracted_path_dir = "./paths/" + args.dataset + "/"
+        if not os.path.isdir(extracted_path_dir):
+            os.makedirs(extracted_path_dir)
+        extracted_path_dir += chosen_optimization + "_agent_topk=" + '-'.join([str(x) for x in args.topk])
+        if not os.path.isdir(extracted_path_dir):
+            os.makedirs(extracted_path_dir)
+        
+        save_pred_paths(extracted_path_dir, path_data.pred_paths, train_labels)
+        save_pred_labels(extracted_path_dir, path_data.uid_topk) # Top-k
+        pred_labels, pred_paths_top10 = preare_path(args, path_data.pred_paths)
+        opt_pred_paths_top10 = explanation_to_pred_path(path_data.uid_pid_explaination)
+        save_pred_explainations(extracted_path_dir, opt_pred_paths_top10, pred_labels)
+
+        avg_exp_metrics_after = {}
+        distributions_exp_metrics_after = {}
+
+        # Save average of values in topk for each metric
+        avg_exp_metrics_after["LIR"] = dict(LIR_after.avg_groups_LIR)
+        avg_exp_metrics_after["SEP"] = dict(SEP_after.avg_groups_SEP)
+        avg_exp_metrics_after["ETD"] = dict(ETD_after.avg_groups_ETD)
+
+        # Save distributions of values in topk for each metric
+        distributions_exp_metrics_after["LIR"] = dict(LIR_after.groups_LIR_scores)
+        distributions_exp_metrics_after["SEP"] = dict(SEP_after.groups_SEP_scores)
+        distributions_exp_metrics_after["ETD"] = dict(ETD_after.groups_ETD_scores)
+        print_expquality_metrics(path_data.dataset_name, avg_exp_metrics_after["LIR"],
+                                    avg_exp_metrics_after["SEP"],
+                                    avg_exp_metrics_after["ETD"])
+
+        # Initialize file to save .csv with avg values of topk recommandation quality metrics
+        if args.save_after_exp_quality_avgs:
+            filename = result_base_path + chosen_optimization + "_avg.csv"
+            avg_metrics_file = open(filename, 'w+')
+            writer = csv.writer(avg_metrics_file)
+            header = ["metric", "group", "data", "opt"]
+            writer.writerow(header)
+            # Write on file avg values for exp quality metrics after optimization
+            for metric_name, group_values in avg_exp_metrics_after.items():
+                for group_name, value in group_values.items():
+                    if args.save_overall and group_name == "Overall": continue
+                    writer.writerow([metric_name, group_name, np.mean(value), chosen_optimization])
+            avg_metrics_file.close()
+
+        # Initialize file to save .csv with distribution values of topk recommandation quality metrics
+        if args.save_after_exp_quality_distributions:
+            filename = result_base_path + chosen_optimization + "_distribution.csv"
+            avg_distribution_file = open(filename, 'w+')
+            writer_distribution = csv.writer(avg_distribution_file)
+            header = ["metric", "group", "data", "opt"]
+            writer_distribution.writerow(header)
+            # Write distribution of values for topk exp quality metrics
+            for metric_name, group_values in distributions_exp_metrics_after.items():
+                for group_name, values in group_values.items():
+                    if args.save_overall and group_name == "Overall": continue
+                    for value in values:
+                        writer_distribution.writerow([metric_name, group_name, value, chosen_optimization])
+            avg_distribution_file.close()
+        log_file.close()
+
+    if chosen_optimization in alpha_optimizations:
+        train_labels = load_labels(args.dataset, 'train')
+    
+        #Performing Alpha-Optimization
+        if args.log_enabled == True:
+            log_path = log_base_path + chosen_optimization + ".txt"
+            log_file = open(log_path, "w+")
+            sys.stdout = log_file
+        print("Performing Alpha-Optimization...")
+        if args.alpha == -1:
+            alphas = [0, 0.05, 0.1, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75,0.80, 0.85, 0.90, 0.95, 1.]
+        else:
+            alphas = [args.alpha]
+
+        #Initialize file to save .csv with avg values of topk recommandation quality metrics
+        if args.save_after_rec_quality_avgs or args.save_after_exp_quality_avgs:
+            filename = chosen_optimization + "_moving_alpha_avg.csv" if args.alpha == -1 else chosen_optimization + "_alpha=" + str(args.alpha) + "_avg.csv"
+            file_path = result_base_path + filename
+            avg_metrics_file = open(file_path, 'w+')
+            writer = csv.writer(avg_metrics_file)
+            header = ["alpha","metric","group","data","opt"]
+            writer.writerow(header)
+
+        # Initialize file to save .csv with distribution values of topk recommandation quality metrics
+        if args.save_after_rec_quality_distributions or args.save_after_exp_quality_distributions:
+            filename = chosen_optimization + "_moving_alpha_distribution.csv" if args.alpha == -1 else chosen_optimization + "_alpha=" + str(args.alpha) + "_distribution.csv"
+            file_path = result_base_path + filename
+            distribution_file = open(file_path, 'w+')
+            writer_distribution = csv.writer(distribution_file)
+            header = ["alpha", "metric", "group", "data", "opt"]
+            writer_distribution.writerow(header)
+        
+        #Apply the chosen optimization for chosen value of alpha
+        for alpha in alphas:
+            print("--- AFTER {} optimization with alpha={}---".format(chosen_optimization, alpha))
+
+            new_paths = path_data.pred_paths
+            if chosen_optimization == "ETDopt":
+                new_paths = optimize_ETD(path_data, alpha)
+            elif chosen_optimization == "SEPopt":
+                new_paths = optimize_SEP(path_data, alpha)
+            elif chosen_optimization == "LIRopt":
+                new_paths = optimize_LIR(path_data, alpha)
+            elif chosen_optimization == "ETD_SEP_opt":
+                new_paths = optimize_ETD_SEP(path_data, alpha)
+            elif chosen_optimization == "ETD_LIR_opt":
+                new_paths = optimize_ETD_LIR(path_data, alpha)
+            elif chosen_optimization == "SEP_LIR_opt":
+                new_paths = optimize_LIR_SEP(path_data, alpha)
+            elif chosen_optimization == "ETD_SEP_LIR_opt":
+                new_paths = optimize_ETD_SEP_LIR(path_data, alpha)
+            
             rec_metrics_after = measure_rec_quality(path_data)
             print_rec_metrics(path_data.dataset_name,rec_metrics_after)
 
-            extracted_path_dir = "./paths/" + args.dataset
+            extracted_path_dir = "./paths/" + args.dataset + "/"
             if not os.path.isdir(extracted_path_dir):
                 os.makedirs(extracted_path_dir)
-            extracted_path_dir = "./paths/" + args.dataset + "/agent_topk_rerank=" + '-'.join([str(x) for x in args.topk])
+            extracted_path_dir += chosen_optimization + "/"
+            if not os.path.isdir(extracted_path_dir):
+                os.makedirs(extracted_path_dir)    
+            extracted_path_dir += "/agent_topk=" + '-'.join([str(x) for x in args.topk]) + "alpha=" + str(alpha)
             if not os.path.isdir(extracted_path_dir):
                 os.makedirs(extracted_path_dir)
             
-            save_pred_paths(extracted_path_dir, path_data.pred_paths, train_labels)
+            save_pred_paths(extracted_path_dir, new_paths, train_labels)
+            save_pred_labels(extracted_path_dir, path_data.uid_topk) # Top-k
+            pred_labels, pred_paths_top10 = preare_path(args, new_paths)
+            opt_pred_paths_top10 = explanation_to_pred_path(path_data.uid_pid_explaination)
+            save_pred_explainations(extracted_path_dir, opt_pred_paths_top10, pred_labels)
 
-            pred_labels, pred_paths_top10 = preare_path(args, path_data.pred_paths)
-            save_pred_labels(extracted_path_dir, pred_labels)
-            save_pred_explainations(extracted_path_dir, pred_paths_top10, pred_labels)
-
-            avg_exp_metrics_after = {}
+            exp_metrics_after = {}
             distributions_exp_metrics_after = {}
 
+            #Save average of values in topk for each metric
+            tr_after_mitigation = avg_LIR(path_data)
+            es_after_mitigation = avg_SEP(path_data)
+            ed_after_mitigation = avg_ETD(path_data)
+
             # Save average of values in topk for each metric
-            avg_exp_metrics_after["LIR"] = dict(LIR_after.avg_groups_LIR)
-            avg_exp_metrics_after["SEP"] = dict(SEP_after.avg_groups_SEP)
-            avg_exp_metrics_after["ETD"] = dict(ETD_after.avg_groups_ETD)
+            exp_metrics_after["LIR"] = dict(tr_after_mitigation.avg_groups_LIR)
+            exp_metrics_after["SEP"] = dict(es_after_mitigation.avg_groups_SEP)
+            exp_metrics_after["ETD"] = dict(ed_after_mitigation.avg_groups_ETD)
 
-            # Save distributions of values in topk for each metric
-            distributions_exp_metrics_after["LIR"] = dict(LIR_after.groups_LIR_scores)
-            distributions_exp_metrics_after["SEP"] = dict(SEP_after.groups_SEP_scores)
-            distributions_exp_metrics_after["ETD"] = dict(ETD_after.groups_ETD_scores)
-            print_expquality_metrics(path_data.dataset_name, avg_exp_metrics_after["LIR"],
-                                     avg_exp_metrics_after["SEP"],
-                                     avg_exp_metrics_after["ETD"])
+            #Save distributions of values in topk for each metric
+            distributions_exp_metrics_after["LIR"] = dict(tr_after_mitigation.groups_LIR_scores)
+            distributions_exp_metrics_after["SEP"] = dict(es_after_mitigation.groups_SEP_scores)
+            distributions_exp_metrics_after["ETD"] = dict(ed_after_mitigation.groups_ETD_scores)
+            print_expquality_metrics(path_data.dataset_name, exp_metrics_after["LIR"],
+                                        exp_metrics_after["SEP"],
+                                        exp_metrics_after["ETD"])
 
-            # Initialize file to save .csv with avg values of topk recommandation quality metrics
+            # Write on file avg values for exp quality metrics after optimization
             if args.save_after_exp_quality_avgs:
-                filename = result_base_path + chosen_optimization + "_avg.csv"
-                avg_metrics_file = open(filename, 'w+')
-                writer = csv.writer(avg_metrics_file)
-                header = ["metric", "group", "data", "opt"]
-                writer.writerow(header)
-                # Write on file avg values for exp quality metrics after optimization
-                for metric_name, group_values in avg_exp_metrics_after.items():
+                for metric_name, group_values in rec_metrics_after.items():
                     for group_name, value in group_values.items():
-                        if args.save_overall and group_name == "Overall": continue
-                        writer.writerow([metric_name, group_name, np.mean(value), chosen_optimization])
-                avg_metrics_file.close()
+                        if not args.save_overall and group_name == "Overall": continue
+                        writer.writerow([alpha, metric_name, group_name, np.mean(value), chosen_optimization])
 
-            # Initialize file to save .csv with distribution values of topk recommandation quality metrics
+            # Write on file avg values for rec quality metrics after optimization
+            if args.save_after_rec_quality_avgs:
+                for metric_name, group_values in exp_metrics_after.items():
+                    for group_name, value in group_values.items():
+                        if not args.save_overall and group_name == "Overall": continue
+                        writer.writerow([alpha, metric_name, group_name, value, chosen_optimization])
+
+            # Write distribution of values for topk rec quality metrics
+            if args.save_after_rec_quality_distributions:
+                for metric_name, group_values in rec_metrics_after.items():
+                    for group_name, values in group_values.items():
+                        if group_name == "Overall": continue
+                        for value in values:
+                            writer_distribution.writerow([alpha, metric_name, group_name, value])
+            # Write distribution of values for topk exp quality metrics
             if args.save_after_exp_quality_distributions:
-                filename = result_base_path + chosen_optimization + "_distribution.csv"
-                avg_distribution_file = open(filename, 'w+')
-                writer_distribution = csv.writer(avg_distribution_file)
-                header = ["metric", "group", "data", "opt"]
-                writer_distribution.writerow(header)
-                # Write distribution of values for topk exp quality metrics
                 for metric_name, group_values in distributions_exp_metrics_after.items():
                     for group_name, values in group_values.items():
-                        if args.save_overall and group_name == "Overall": continue
+                        if group_name == "Overall": continue
                         for value in values:
-                            writer_distribution.writerow([metric_name, group_name, value, chosen_optimization])
-                avg_distribution_file.close()
+                            writer_distribution.writerow([alpha, metric_name, group_name, value])
+        if args.log_enabled:
             log_file.close()
-    if chosen_optimization in alpha_optimizations:
-        for chosen_optimization in alpha_optimizations:
-                #Performing Alpha-Optimization
-            if args.log_enabled == True:
-                log_path = log_base_path + chosen_optimization + ".txt"
-                log_file = open(log_path, "w+")
-                sys.stdout = log_file
-            print("Performing Alpha-Optimization...")
-            if args.alpha == -1:
-                alphas = [0, 0.05, 0.1, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75,0.80, 0.85, 0.90, 0.95, 1.]
-            else:
-                alphas = [args.alpha]
-
-            #Initialize file to save .csv with avg values of topk recommandation quality metrics
-            if args.save_after_rec_quality_avgs or args.save_after_exp_quality_avgs:
-                filename = chosen_optimization + "_moving_alpha_avg.csv" if args.alpha == -1 else chosen_optimization + "_alpha=" + args.alpha + "_avg.csv"
-                file_path = result_base_path + filename
-                avg_metrics_file = open(file_path, 'w+')
-                writer = csv.writer(avg_metrics_file)
-                header = ["alpha","metric","group","data","opt"]
-                writer.writerow(header)
-
-            # Initialize file to save .csv with distribution values of topk recommandation quality metrics
-            if args.save_after_rec_quality_distributions or args.save_after_exp_quality_distributions:
-                filename = chosen_optimization + "_moving_alpha_distribution.csv" if args.alpha == -1 else chosen_optimization + "_alpha=" + args.alpha + "_distribution.csv"
-                file_path = result_base_path + filename
-                distribution_file = open(file_path, 'w+')
-                writer_distribution = csv.writer(distribution_file)
-                header = ["alpha", "metric", "group", "data", "opt"]
-                writer_distribution.writerow(header)
-
-            #Apply the chosen optimization for chosen value of alpha
-            for alpha in alphas:
-                print("--- AFTER {} optimization with alpha={}---".format(chosen_optimization, alpha))
-
-                if chosen_optimization == "ETDopt":
-                    optimize_ETD(path_data, alpha)
-                elif chosen_optimization == "SEPopt":
-                    optimize_SEP(path_data, alpha)
-                elif chosen_optimization == "LIRopt":
-                    optimize_LIR(path_data, alpha)
-                elif chosen_optimization == "ETD_SEP_opt":
-                    optimize_ETD_SEP(path_data, alpha)
-                elif chosen_optimization == "ETD_LIR_opt":
-                    optimize_ETD_LIR(path_data, alpha)
-                elif chosen_optimization == "SEP_LIR_opt":
-                    optimize_LIR_SEP(path_data, alpha)
-                elif chosen_optimization == "ETD_SEP_LIR_opt":
-                    optimize_ETD_SEP_LIR(path_data, alpha)
-
-                rec_metrics_after = measure_rec_quality(path_data)
-                print_rec_metrics(path_data.dataset_name,rec_metrics_after)
-
-                exp_metrics_after = {}
-                distributions_exp_metrics_after = {}
-
-                #Save average of values in topk for each metric
-                tr_after_mitigation = avg_LIR(path_data)
-                es_after_mitigation = avg_SEP(path_data)
-                ed_after_mitigation = avg_ETD(path_data)
-
-                # Save average of values in topk for each metric
-                exp_metrics_after["LIR"] = dict(tr_after_mitigation.avg_groups_LIR)
-                exp_metrics_after["SEP"] = dict(es_after_mitigation.avg_groups_SEP)
-                exp_metrics_after["ETD"] = dict(ed_after_mitigation.avg_groups_ETD)
-
-                #Save distributions of values in topk for each metric
-                distributions_exp_metrics_after["LIR"] = dict(tr_after_mitigation.groups_LIR_scores)
-                distributions_exp_metrics_after["SEP"] = dict(es_after_mitigation.groups_SEP_scores)
-                distributions_exp_metrics_after["ETD"] = dict(ed_after_mitigation.groups_ETD_scores)
-                print_expquality_metrics(path_data.dataset_name, exp_metrics_after["LIR"],
-                                         exp_metrics_after["SEP"],
-                                         exp_metrics_after["ETD"])
-
-                # Write on file avg values for exp quality metrics after optimization
-                if args.save_after_exp_quality_avgs:
-                    for metric_name, group_values in rec_metrics_after.items():
-                      for group_name, value in group_values.items():
-                          if not args.save_overall and group_name == "Overall": continue
-                          writer.writerow([alpha, metric_name, group_name, np.mean(value), chosen_optimization])
-
-                # Write on file avg values for rec quality metrics after optimization
-                if args.save_after_rec_quality_avgs:
-                    for metric_name, group_values in exp_metrics_after.items():
-                        for group_name, value in group_values.items():
-                            if not args.save_overall and group_name == "Overall": continue
-                            writer.writerow([alpha, metric_name, group_name, value, chosen_optimization])
-
-                # Write distribution of values for topk rec quality metrics
-                if args.save_after_rec_quality_distributions:
-                    for metric_name, group_values in rec_metrics_after.items():
-                        for group_name, values in group_values.items():
-                            if group_name == "Overall": continue
-                            for value in values:
-                                writer_distribution.writerow([alpha, metric_name, group_name, value])
-                # Write distribution of values for topk exp quality metrics
-                if args.save_after_exp_quality_distributions:
-                    for metric_name, group_values in distributions_exp_metrics_after.items():
-                        for group_name, values in group_values.items():
-                            if group_name == "Overall": continue
-                            for value in values:
-                                writer_distribution.writerow([alpha, metric_name, group_name, value])
-            if args.log_enabled:
-                log_file.close()
-            #Close files
-            if args.save_after_rec_quality_avgs or args.save_after_exp_quality_avgs:
-                avg_metrics_file.close()
-            if args.save_after_exp_quality_distributions or args.save_after_rec_quality_distributions:
-                distribution_file.close()
+        #Close files
+        if args.save_after_rec_quality_avgs or args.save_after_exp_quality_avgs:
+            avg_metrics_file.close()
+        if args.save_after_exp_quality_distributions or args.save_after_rec_quality_distributions:
+            distribution_file.close()

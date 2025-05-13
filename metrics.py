@@ -238,7 +238,7 @@ def avg_LIR(path_data, attribute_name="Gender"):
             groups_LIR_scores[attr_name].append(LIR_score)
         groups_LIR_scores["Overall"].append(LIR_score)
 
-    print(groups_LIR_scores)
+    # print(groups_LIR_scores)
     for attribute_label, group_scores in groups_LIR_scores.items():
          avg_groups_LIR[attribute_label] = np.array(group_scores).mean()
 
