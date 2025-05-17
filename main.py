@@ -8,7 +8,7 @@ from path_data_loader import PathDataLoader
 from models.PGPR.extract_predicted_paths import save_pred_paths, save_pred_explainations#, save_pred_labels
 
 def save_pred_labels(folder_path, labels_topk):
-    print(labels_topk)
+    # print(labels_topk)
     print("Saving topks...")
     with open(folder_path +  "/uid_topk.csv", 'w+', newline='') as uid_topk:
         header = ["uid", "top10"]

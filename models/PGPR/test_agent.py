@@ -245,13 +245,13 @@ def evaluate_paths(dataset_name, path_file, train_labels, test_labels, degrees):
         path_prob = reduce(lambda x, y: x * y, probs)
         pred_paths[uid][pid].append((path_score, path_prob, path))
 
-    if not os.path.isdir("../paths/"):
-        os.makedirs("./paths/")
+    if not os.path.isdir("../../paths/"):
+        os.makedirs("../../paths/")
 
-    extracted_path_dir = "../paths/" + args.dataset
+    extracted_path_dir = "../../paths/" + args.dataset
     if not os.path.isdir(extracted_path_dir):
         os.makedirs(extracted_path_dir)
-    extracted_path_dir = "../paths/" + args.dataset + "/agent_topk=" + '-'.join([str(x) for x in args.topk])
+    extracted_path_dir = "../../paths/" + args.dataset + "/agent_topk=" + '-'.join([str(x) for x in args.topk])
     if not os.path.isdir(extracted_path_dir):
         os.makedirs(extracted_path_dir)
     save_pred_paths(extracted_path_dir, pred_paths, train_labels)
@@ -320,7 +320,7 @@ def evaluate_paths(dataset_name, path_file, train_labels, test_labels, degrees):
                 n_of_ptype_before[ptype] = 0
             n_of_ptype_before[ptype] += 1
 
-
+    # print(pred_paths_top10)
     #Save pred_labels and pred_explaination for assesment and reranking
     save_pred_labels(extracted_path_dir, pred_labels)
     save_pred_explainations(extracted_path_dir, pred_paths_top10, pred_labels)

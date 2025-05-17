@@ -17,3 +17,16 @@ paths/
 paths_old/
 
 tmp_old/
+
+artefacts/
+
+logs/
+results/
+
+log_v1/
+paths_v1/
+results_v1/
+
+log_v2/
+paths_v2/
+results_v2/
