@@ -396,6 +396,10 @@ class ML1MDatasetMapper(object):
             dburl_to_mlid[dburl] = [mlid, name]
         file.close()
 
+        mappings_path = DATASET_DIR[dataset_name] + "/mappings/"
+        if not os.path.isdir(mappings_path):
+            os.makedirs(mappings_path)
+
         file = open(DATASET_DIR[dataset_name] + "/joint-kg/kg/e_map.dat", "r", encoding='latin-1')
         fileo = open(DATASET_DIR[dataset_name] + "/mappings/product_mappings.txt", "w+")
         writer = csv.writer(fileo, delimiter="\t")
@@ -653,6 +657,10 @@ class ML100KDatasetMapper(object):
             dburl = row[3]
             dburl_to_mlid[dburl] = [mlid, name]
         file.close()
+
+        mappings_path = DATASET_DIR[dataset_name] + "/mappings/"
+        if not os.path.isdir(mappings_path):
+            os.makedirs(mappings_path)
 
         file = open(DATASET_DIR[dataset_name] + "/e_map.txt", "r", encoding='latin-1')
         fileo = open(DATASET_DIR[dataset_name] + "/mappings/product_mappings.txt", "w+")

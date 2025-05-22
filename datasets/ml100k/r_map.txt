@@ -1,0 +1,8 @@
+id	original_name	name
+0	producer	produced_by_producer
+1	distributor	distributed_by_distributor
+2	writer	wrote_by_writer
+3	cinematography	cinematography_by_cinematographer
+4	subject	belong_to_category
+5	starring	starred_by_actor
+6	director	directed_by_director

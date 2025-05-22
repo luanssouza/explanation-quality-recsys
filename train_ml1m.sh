@@ -1,10 +1,11 @@
-# python dataset_mapper_splitted.py --dataset ml1m
-# cd models/PGPR
-# python preprocess.py --dataset ml1m
-# python train_transe_model.py --dataset ml1m
-# python train_agent.py --dataset ml1m
-# python test_agent.py --dataset ml1m
-# cd ../../
+python dataset_mapper_splitted.py --dataset ml1m
+cd models/PGPR
+python preprocess.py --dataset ml1m
+python train_transe_model.py --dataset ml1m
+python train_agent.py --dataset ml1m
+python test_agent.py --dataset ml1m
+cd ../../
+mkdir ./logs
 python main.py --dataset=ml1m --opt=softETD > logs/ml1m_softETD.log
 python main.py --dataset=ml1m --opt=softSEP > logs/ml1m_softSEP.log
 python main.py --dataset=ml1m --opt=softLIR > logs/ml1m_softLIR.log

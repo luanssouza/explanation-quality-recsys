@@ -1,10 +1,11 @@
-# python dataset_mapper_splitted.py --dataset ml100k
-# cd models/PGPR
-# python preprocess.py --dataset ml100k
-# python train_transe_model.py --dataset ml100k
-# python train_agent.py --dataset ml100k
-# python test_agent.py --dataset ml100k
-# cd ../../
+python dataset_mapper_splitted.py --dataset ml100k
+cd models/PGPR
+python preprocess.py --dataset ml100k
+python train_transe_model.py --dataset ml100k
+python train_agent.py --dataset ml100k
+python test_agent.py --dataset ml100k
+cd ../../
+mkdir ./logs
 python main.py --dataset=ml100k --opt=softETD > logs/ml100k_softETD.log
 python main.py --dataset=ml100k --opt=softSEP > logs/ml100k_softSEP.log
 python main.py --dataset=ml100k --opt=softLIR > logs/ml100k_softLIR.log
