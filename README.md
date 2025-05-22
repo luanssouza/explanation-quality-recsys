@@ -212,3 +212,10 @@ Average difference between age groups for the 3 metrics.
 
 \[3\] Xiang Wang, Xiangnan He, Yixin Cao, Meng Liu and Tat-Seng Chua (2019). KGAT: Knowledge Graph Attention Network for Recommendation. In KDD'19, Anchorage, Alaska, USA, August 4-8, 2019.  https://github.com/xiangwang1223/knowledge_graph_attention_network
 
+# Reproducibility
+
+Before following the instructions for reproducibility, please, download the [ML1M preprocessed dataset](#datasets) and check the instructions of our reproducibility repository: [https://anonymous.4open.science/r/mesuaring-fairness-explainability-262E](https://anonymous.4open.science/r/mesuaring-fairness-explainability-262E)
+
+Install the requirements as in [Requirements sections](#requirements) and use the following commands to train the models and make predictions:
+- M1M: `bash train_ml1m.sh`
+- M100K: `bash train_ml100k.sh`
