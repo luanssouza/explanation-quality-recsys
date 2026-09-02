@@ -64,7 +64,9 @@ def extract_embeddings(args):
     """Note that last entity embedding is of size [vocab_size+1, d]."""
     model_file = '{}/transe_model_sd_epoch_{}.ckpt'.format(args.log_dir, args.epochs)
     print('Load embeddings', model_file)
-    state_dict = torch.load(model_file, map_location=lambda storage, loc: storage)
+    # Weights_only=False added explicitly — torch>=2.6
+    # changed that default, which would otherwise break loading this non-tensor state dict.
+    state_dict = torch.load(model_file, map_location=lambda storage, loc: storage, weights_only=False)
     if args.dataset == "ml1m":
         embeds = {
             USER: state_dict['user.weight'].cpu().data.numpy()[:-1],  # Must remove last dummy 'user' with 0 embed.

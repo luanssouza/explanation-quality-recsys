@@ -101,8 +101,8 @@ class AmazonDataset(object):
             user_idx = uid2kg_uid[int(arr[0])]
             if int(arr[1]) not in id2kgid: continue
             product_idx = id2kgid[int(arr[1])]
-            rating = int(arr[2]) if self.dataset_name == "ml1m" else 0
-            timestamp = int(arr[3]) if self.dataset_name == "ml1m" else int(arr[2])
+            rating = 0 if self.dataset_name == "lastfm" else int(arr[2])
+            timestamp = int(arr[2]) if self.dataset_name == "lastfm" else int(arr[3])
             if rating >= threshold:
                 positive_reviews+=1
             else:

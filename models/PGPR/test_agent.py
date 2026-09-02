@@ -55,7 +55,6 @@ def evaluate(dataset_name, topk_matches, test_user_products):
         ),
 
     )
-    #uid2gender, gender2name = get_user2gender(dataset_name)
     test_user_idxs = list(test_user_products.keys())
     for uid in test_user_idxs:
         if uid not in topk_matches or len(topk_matches[uid]) < 10:
@@ -81,16 +80,16 @@ def evaluate(dataset_name, topk_matches, test_user_products):
         precision = hit_num / len(pred_list)
         hit = 1.0 if hit_num > 0.0 else 0.0
 
-        # Based on attribute
-#        attribute_val = uid2gender[uid]
-#        gender = gender2name[attribute_val]
+        # Users with no
+        # gender mapping are skipped for the stratified groups (still counted in Overall).
         all = "Overall"
-
-        # According to gender
- #       metrics.ndcg[gender].append(ndcg)
-#        metrics.recall[gender].append(recall)
- #       metrics.precision[gender].append(precision)
- #       metrics.hr[gender].append(hit)
+        attribute_val = user2attribute.get(uid)
+        if attribute_val is not None:
+            gender = attribute2name[attribute_val]
+            metrics.ndcg[gender].append(ndcg)
+            metrics.recall[gender].append(recall)
+            metrics.precision[gender].append(precision)
+            metrics.hr[gender].append(hit)
 
         # General
         metrics.ndcg[all].append(ndcg)
@@ -184,7 +183,9 @@ def predict_paths(policy_file, path_file, args):
     print('Predicting paths...')
     env = BatchKGEnvironment(args.dataset, args.max_acts, max_path_len=args.max_path_len,
                              state_history=args.state_history)
-    pretrain_sd = torch.load(policy_file, map_location=torch.device('cpu'))
+    # weights_only=False added explicitly — torch>=2.6
+    # changed that default, which would otherwise break loading this non-tensor state dict.
+    pretrain_sd = torch.load(policy_file, map_location=torch.device('cpu'), weights_only=False)
     model = ActorCritic(env.state_dim, env.act_dim, gamma=args.gamma, hidden_sizes=args.hidden).to(args.device)
     model_sd = model.state_dict()
     model_sd.update(pretrain_sd)
